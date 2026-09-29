@@ -49,6 +49,7 @@ final class AppModel {
         power.refresh()
         loginItem.refresh()
         autoCharger.refreshSetupState()
+        autoCharger.refreshPlugState()
     }
 
     private func evaluateAutoCharge() {

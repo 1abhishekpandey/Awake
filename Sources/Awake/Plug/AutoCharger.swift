@@ -33,6 +33,7 @@ final class AutoCharger {
             guard isEnabled != oldValue else { return }
             settings.autoChargeEnabled = isEnabled
             handledAction = nil
+            manualOverride = nil
             refreshSetupState()
             evaluateLast()
         }
@@ -58,6 +59,10 @@ final class AutoCharger {
     /// One line about the last thing that happened, e.g. "Charger on at 30% · 2:14 PM".
     private(set) var lastEvent: String?
     private(set) var lastEventFailed = false
+    /// Whether the plug is on, as last read or switched. Nil until known.
+    private(set) var plugIsOn: Bool?
+    /// True while a command to the plug is running (the button shows it's busy).
+    private(set) var isBusy = false
 
     // MARK: Private state
 
@@ -76,6 +81,8 @@ final class AutoCharger {
     @ObservationIgnored private var notifiedFailure = false
     @ObservationIgnored private var notifiedNotCharging = false
     @ObservationIgnored private var last: (onAC: Bool, charge: Int?)?
+    /// The action a manual switch is holding back (see `markManual`).
+    @ObservationIgnored private var manualOverride: AwakeMath.PlugAction?
 
     init(
         settings: any SettingsStoring,
@@ -129,6 +136,11 @@ final class AutoCharger {
         }
         guard !inFlight else { return }
 
+        if let manualOverride {
+            if action == manualOverride { return }
+            self.manualOverride = nil // the other level was reached: automatic again
+        }
+
         if action == handledAction {
             // Already switched. Only a switched-on charger that still isn't
             // charging after a minute is worth one more try.
@@ -145,47 +157,78 @@ final class AutoCharger {
         send(action, charge: charge, now: now)
     }
 
-    /// Reads the plug once, to check the connection (and trigger macOS's
-    /// Local Network prompt the first time).
-    func checkPlug() {
+    /// Reads whether the plug is on. Called when the menu opens; the first call
+    /// also triggers macOS's Local Network prompt.
+    func refreshPlugState() {
+        guard isSetUp, !inFlight else { return }
+        run { client in
+            let on = try await client(.query)
+            self.plugIsOn = on
+        } onError: { error in
+            self.record("\(error.localizedDescription) · \(Self.time(.now))", failed: true)
+        }
+    }
+
+    /// The menu's charger button: flips the plug. Auto-charge then leaves this
+    /// choice alone until the battery reaches the next level.
+    func togglePlug(now: Date = .now) {
         guard !inFlight else { return }
+        let known = plugIsOn
+        run { client in
+            let current: Bool
+            if let known { current = known } else { current = try await client(.query) }
+            let on = try await client(.set(on: !current))
+            self.plugIsOn = on
+            self.markManual(on: on)
+            self.record("Charger turned \(on ? "on" : "off") by hand · \(Self.time(now))", failed: false)
+        } onError: { error in
+            self.plugIsOn = nil
+            self.record("\(error.localizedDescription) · \(Self.time(now))", failed: true)
+        }
+    }
+
+    /// A manual switch holds until the battery reaches the other level: turning
+    /// the charger on by hand blocks "switch off" until the next "switch on"
+    /// moment, and the other way round.
+    private func markManual(on: Bool) {
+        manualOverride = on ? .turnOff : .turnOn
+    }
+
+    /// Runs one plug task at a time, keeping `inFlight` and `isBusy` in step.
+    private func run(
+        _ body: @escaping @MainActor (PlugClient) async throws -> Void,
+        onError: @escaping @MainActor (Error) -> Void
+    ) {
         inFlight = true
+        isBusy = true
         let client = client
         Task {
-            do {
-                let on = try await client(.query)
-                record("Plug is \(on ? "on" : "off") · \(Self.time(.now))", failed: false)
-            } catch {
-                record("\(error.localizedDescription) · \(Self.time(.now))", failed: true)
-            }
+            do { try await body(client) } catch { onError(error) }
             inFlight = false
+            isBusy = false
         }
     }
 
     private func send(_ action: AwakeMath.PlugAction, charge: Int?, now: Date) {
-        inFlight = true
         let on = action == .turnOn
-        let client = client
-        Task {
-            do {
-                _ = try await client(.set(on: on))
-                handledAction = action
-                handledAt = now
-                lastFailureAt = nil
-                let level = charge.map { " at \($0)%" } ?? ""
-                record("Charger \(on ? "on" : "off")\(level) · \(Self.time(now))", failed: false)
-            } catch {
-                lastFailureAt = now
-                record("\(error.localizedDescription) · \(Self.time(now))", failed: true)
-                if !notifiedFailure {
-                    notifiedFailure = true
-                    notify(
-                        "Couldn't switch the charger \(on ? "on" : "off")",
-                        "\(error.localizedDescription) Awake will keep trying every minute."
-                    )
-                }
+        run { client in
+            _ = try await client(.set(on: on))
+            self.plugIsOn = on
+            self.handledAction = action
+            self.handledAt = now
+            self.lastFailureAt = nil
+            let level = charge.map { " at \($0)%" } ?? ""
+            self.record("Charger \(on ? "on" : "off")\(level) · \(Self.time(now))", failed: false)
+        } onError: { error in
+            self.lastFailureAt = now
+            self.record("\(error.localizedDescription) · \(Self.time(now))", failed: true)
+            if !self.notifiedFailure {
+                self.notifiedFailure = true
+                self.notify(
+                    "Couldn't switch the charger \(on ? "on" : "off")",
+                    "\(error.localizedDescription) Awake will keep trying every minute."
+                )
             }
-            inFlight = false
         }
     }
 

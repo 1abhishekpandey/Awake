@@ -138,6 +138,8 @@ private final class FakePlug: @unchecked Sendable {
     private let lock = NSLock()
     private var _commands: [AutoCharger.PlugCommand] = []
     var fail = false
+    /// What a status query reports.
+    var isOn = false
 
     var commands: [AutoCharger.PlugCommand] { lock.withLock { _commands } }
 
@@ -145,7 +147,10 @@ private final class FakePlug: @unchecked Sendable {
         { [self] command in
             lock.withLock { _commands.append(command) }
             if fail { throw SmartPlug.PlugError.timedOut }
-            return true
+            switch command {
+            case .query: return isOn
+            case .set(let on): return on
+            }
         }
     }
 }
@@ -244,6 +249,55 @@ struct AutoChargerTests {
         charger.evaluate(onAC: false, charge: 28, now: t0.addingTimeInterval(200))
         await settle()
         #expect(plug.commands == [.set(on: true), .set(on: true)])
+    }
+
+    @Test("The charger button reads the plug first, then flips it")
+    func buttonFlipsUnknownState() async {
+        let plug = FakePlug()
+        plug.isOn = true
+        let (charger, _) = makeCharger(plug: plug, enabled: false)
+        charger.togglePlug(now: t0)
+        await settle()
+        #expect(plug.commands == [.query, .set(on: false)])
+        #expect(charger.plugIsOn == false)
+
+        charger.togglePlug(now: t0)
+        await settle()
+        #expect(plug.commands.last == .set(on: true))
+        #expect(charger.plugIsOn == true)
+    }
+
+    @Test("Turning the charger on by hand above the stop level isn't undone at once")
+    func manualSwitchIsRespected() async {
+        let plug = FakePlug()
+        let (charger, _) = makeCharger(plug: plug)
+        charger.evaluate(onAC: false, charge: 95, now: t0) // between levels: nothing
+        charger.togglePlug(now: t0)                        // user turns the charger on
+        await settle()
+        charger.evaluate(onAC: false, charge: 95, now: t0.addingTimeInterval(1))
+        charger.evaluate(onAC: true, charge: 95, now: t0.addingTimeInterval(5))
+        charger.evaluate(onAC: true, charge: 100, now: t0.addingTimeInterval(600))
+        await settle()
+        #expect(plug.commands == [.query, .set(on: true)])
+
+        // Unplugged later and drained to the start level: automatic again.
+        charger.evaluate(onAC: false, charge: 30, now: t0.addingTimeInterval(9000))
+        await settle()
+        #expect(plug.commands.last == .set(on: true))
+        #expect(plug.commands.count == 3)
+    }
+
+    @Test("Turning the charger off by hand at a low level isn't undone at once")
+    func manualOffIsRespected() async {
+        let plug = FakePlug()
+        plug.isOn = true
+        let (charger, _) = makeCharger(plug: plug)
+        charger.togglePlug(now: t0)
+        await settle()
+        charger.evaluate(onAC: false, charge: 25, now: t0.addingTimeInterval(5))
+        charger.evaluate(onAC: false, charge: 24, now: t0.addingTimeInterval(120))
+        await settle()
+        #expect(plug.commands == [.query, .set(on: false)])
     }
 
     @Test("Raising the cutoff to the start level moves start above it")

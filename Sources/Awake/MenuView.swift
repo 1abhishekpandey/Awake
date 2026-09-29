@@ -369,7 +369,7 @@ private struct SettingsSection: View {
 }
 
 /// Auto-charge: the switch, the two levels (5% steps, start always above the
-/// cutoff), and one status line.
+/// cutoff), a button that flips the charger by hand, and one status line.
 private struct AutoChargeRows: View {
     @Bindable var autoCharger: AutoCharger
 
@@ -388,27 +388,49 @@ private struct AutoChargeRows: View {
             SettingRow("Stop charging at") {
                 percentPicker("Stop charging at", selection: $autoCharger.stopPercent, choices: autoCharger.stopChoices)
             }
-            status
+        }
+
+        if autoCharger.isSetUp {
+            SettingRow("Mac charger") {
+                chargerButton
+            }
+            if let event = autoCharger.lastEvent {
+                Text(event)
+                    .font(.caption)
+                    .foregroundStyle(autoCharger.lastEventFailed ? .red : .secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if autoCharger.isEnabled {
+            Text("Plug not set up. Run Scripts/set-plug-credentials.sh.")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    @ViewBuilder
-    private var status: some View {
-        HStack(spacing: 6) {
-            if !autoCharger.isSetUp {
-                Text("Plug not set up. Run Scripts/set-plug-credentials.sh.")
-                    .foregroundStyle(.red)
-            } else {
-                Text(autoCharger.lastEvent ?? "Waiting for the battery to reach a level.")
-                    .foregroundStyle(autoCharger.lastEventFailed ? .red : .secondary)
-                Spacer(minLength: 4)
-                Button("Check plug") { autoCharger.checkPlug() }
-                    .buttonStyle(.link)
+    /// One button: shows whether the charger is on and flips it when clicked.
+    private var chargerButton: some View {
+        let on = autoCharger.plugIsOn
+        return Button {
+            autoCharger.togglePlug()
+        } label: {
+            HStack(spacing: 5) {
+                if autoCharger.isBusy {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: on == true ? "bolt.fill" : "bolt.slash")
+                }
+                Text(on == nil ? "On / Off" : on! ? "On" : "Off")
+                    .frame(minWidth: 44)
             }
         }
-        .font(.caption)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(on == true ? .green : nil)
+        .disabled(autoCharger.isBusy)
+        .help(on == true ? "Turn the Mac charger off" : "Turn the Mac charger on")
     }
 
     private func percentPicker(_ title: String, selection: Binding<Int>, choices: [Int]) -> some View {
