@@ -44,6 +44,29 @@ Awake takes an IOKit power assertion, `PreventUserIdleSystemSleep`. It is exactl
 - History is stored as JSON in `~/Library/Application Support/Awake/history.json` (`yyyy-MM-dd` to seconds). The last 60 days are kept.
 - When the current work day first reaches 8 hours you get one local notification ("8 hours done today"), at most once per work day. If notifications are denied it is simply skipped.
 
+## Auto-charge (smart plug)
+
+Awake can switch the smart plug your Mac charger is plugged into (a Tuya-based Wipro plug), over the home network only. No cloud.
+
+- **Settings:** "Auto-charge (smart plug)" switch, then "Start charging at" and "Stop charging at", both in 5% steps. Start is always above "Stop everything below"; raising the cutoff pushes Start up with it. Stop goes up to 100%. Defaults: 30% and 90%.
+- **Rule:** on battery at or below Start, the plug is switched on. Charging at or above Stop, it is switched off. In between nothing happens, so switching the plug by hand is left alone until the next level is reached. Each crossing switches the plug once.
+- **No polling:** it runs on the same macOS power-source notification that drives the battery cutoff. The 30-second tick only retries: a failed command after a minute, or once more if the charger was switched on but the Mac is still on battery after a minute (with a notification).
+- **Status line:** the last thing that happened ("Charger on at 30% · 2:14 PM" or the error), and a "Check plug" link that reads the plug once.
+- **Local Network access:** the first connection makes macOS ask "Awake would like to find devices on your local network". Allow it (System Settings > Privacy & Security > Local Network).
+- **macOS may hold the charge at 80%** (Optimized Battery Charging or a charge limit). With Stop above that, the plug never switches off. Keep Stop at or below the limit, or turn the limit off.
+- **Asleep:** nothing runs while the Mac sleeps; it catches up on wake.
+
+### Plug credentials (Keychain only)
+
+The device ID, local key and LAN address are never in the repo. They live in the login Keychain as one generic password, service `com.abhishek.awake.smart-plug`, account `plug`, holding JSON (`deviceId`, `localKey`, `host`, `switchDP`). Set or change them with:
+
+```
+Scripts/set-plug-credentials.sh                    # prompts; the key is typed hidden
+Scripts/set-plug-credentials.sh --from-env FILE    # reads TUYA_DEVICE_ID, TUYA_LOCAL_KEY, TUYA_DEVICE_IP, TUYA_SWITCH_DP
+```
+
+They are read on every command, so no restart is needed. The item is readable by this user's apps without a prompt, because an ad-hoc signed app would otherwise be re-prompted after every rebuild. If the plug gets a new IP (reserve it in the router to avoid that) or is re-paired (new local key), run the script again.
+
 ## Build and install
 
 Needs macOS 14+ on Apple Silicon and Xcode (or its command line tools) with Swift 6.
@@ -74,6 +97,7 @@ Package.swift            Swift package (executable target + tests)
 build.sh                 builds and signs Awake.app, optional --install
 Resources/Info.plist     bundle template (LSUIElement, com.abhishek.awake)
 Scripts/make-icon.swift  draws AppIcon.icns
+Scripts/set-plug-credentials.sh  saves the smart plug credentials to the Keychain
 Sources/Awake/
   AwakeApp.swift         @main, MenuBarExtra
   AppModel.swift         timer, sleep/wake, quit, first-launch setup
@@ -86,7 +110,11 @@ Sources/Awake/
   MenuView.swift         the popover
   WeekChart.swift        the Mon-Fri bars
   LoginItem.swift        Open at Login (SMAppService)
-  Notifier.swift         the 8-hour notification
+  Notifier.swift         the 8-hour and plug notifications
   Format.swift           duration and clock formatting
+  Plug/AutoCharger.swift     auto-charge: when to switch the plug, retries, status
+  Plug/SmartPlug.swift       one TCP exchange with the plug (Network.framework)
+  Plug/TuyaProtocol.swift    Tuya v3.3 frames: AES-128-ECB, CRC32 (pure, tested)
+  Plug/PlugCredentials.swift reads the plug credentials from the Keychain
 Tests/AwakeTests/        pure logic and tracker tests
 ```

@@ -42,6 +42,9 @@ final class InMemorySettingsStore: SettingsStoring {
     var dayResetMinute = SettingsDefaults.dayResetMinute
     var didSetupLoginItem = SettingsDefaults.didSetupLoginItem
     var lastGoalNotifiedDay: String?
+    var autoChargeEnabled = SettingsDefaults.autoChargeEnabled
+    var chargeStartPercent = SettingsDefaults.chargeStartPercent
+    var chargeStopPercent = SettingsDefaults.chargeStopPercent
 
     // The pre-mode keep-awake settings, `nil` when "never saved".
     var legacyKeepAwakeEnabled: Bool?

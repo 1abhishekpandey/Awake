@@ -17,6 +17,12 @@ protocol SettingsStoring: AnyObject {
     var didSetupLoginItem: Bool { get set }
     /// Work-day key (`yyyy-MM-dd`) for which the 8-hour notification was already sent.
     var lastGoalNotifiedDay: String? { get set }
+    /// Auto-charge: switch the smart plug on and off at the levels below.
+    var autoChargeEnabled: Bool { get set }
+    /// "Start charging at", in percent.
+    var chargeStartPercent: Int { get set }
+    /// "Stop charging at", in percent.
+    var chargeStopPercent: Int { get set }
 
     // The two settings `keepAwakeMode` replaced. They are read once, to migrate, and then removed.
     /// Old "Keep Mac awake" switch, or `nil` if it was never saved.
@@ -31,4 +37,7 @@ enum SettingsDefaults {
     static let batteryCutoffPercent = AwakeMath.defaultCutoff
     static let dayResetMinute = AwakeMath.defaultResetMinute
     static let didSetupLoginItem = false
+    static let autoChargeEnabled = false
+    static let chargeStartPercent = AwakeMath.defaultChargeStart
+    static let chargeStopPercent = AwakeMath.defaultChargeStop
 }

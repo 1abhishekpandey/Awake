@@ -10,6 +10,7 @@ final class AppModel {
     let power: PowerController
     let tracker: AwakeTracker
     let loginItem: LoginItem
+    let autoCharger: AutoCharger
 
     private var timer: Timer?
     private var sigtermSource: DispatchSourceSignal?
@@ -21,12 +22,18 @@ final class AppModel {
         power = PowerController(settings: settings)
         tracker = AwakeTracker(store: FileHistoryStore(), settings: settings)
         loginItem = LoginItem(settings: settings)
+        autoCharger = AutoCharger(settings: settings, cutoffPercent: power.batteryCutoffPercent)
 
         // Lid and battery-cutoff changes start or stop counting immediately.
         power.onConditionsChange = { [tracker] lidClosed, cutOff in
             tracker.update(lidClosed: lidClosed, cutOff: cutOff)
         }
         tracker.start(lidClosed: power.lidClosed, cutOff: power.isCutOff)
+
+        // Battery changes arrive as notifications from macOS; the plug is switched from there.
+        power.onBatteryChange = { [weak self] in self?.evaluateAutoCharge() }
+        power.onCutoffChange = { [autoCharger] percent in autoCharger.cutoffChanged(to: percent) }
+        evaluateAutoCharge()
 
         startTimer()
         observeSleepAndQuit()
@@ -41,6 +48,11 @@ final class AppModel {
     func refreshForDisplay() {
         power.refresh()
         loginItem.refresh()
+        autoCharger.refreshSetupState()
+    }
+
+    private func evaluateAutoCharge() {
+        autoCharger.evaluate(onAC: power.onAC, charge: power.batteryPercent)
     }
 
     // MARK: Timer
@@ -60,6 +72,8 @@ final class AppModel {
     private func tick() {
         power.refresh()
         tracker.tick()
+        // Retries only: a failed command, or a charger that was switched on but isn't charging.
+        evaluateAutoCharge()
     }
 
     // MARK: Sleep, wake, quit

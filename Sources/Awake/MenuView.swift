@@ -36,7 +36,7 @@ struct MenuView: View {
 
             SettingsSection(
                 power: model.power, tracker: model.tracker, loginItem: model.loginItem,
-                resetListOpen: $resetListOpen
+                autoCharger: model.autoCharger, resetListOpen: $resetListOpen
             )
             .padding(EdgeInsets(top: 10, leading: 14, bottom: 8, trailing: 14))
 
@@ -318,6 +318,7 @@ private struct SettingsSection: View {
     @Bindable var power: PowerController
     let tracker: AwakeTracker
     let loginItem: LoginItem
+    let autoCharger: AutoCharger
     @Binding var resetListOpen: Bool
 
     var body: some View {
@@ -336,6 +337,8 @@ private struct SettingsSection: View {
                 .pickerStyle(.menu)
                 .fixedSize()
             }
+
+            AutoChargeRows(autoCharger: autoCharger)
 
             SettingRow("Open at Login") {
                 Toggle(
@@ -362,6 +365,61 @@ private struct SettingsSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+/// Auto-charge: the switch, the two levels (5% steps, start always above the
+/// cutoff), and one status line.
+private struct AutoChargeRows: View {
+    @Bindable var autoCharger: AutoCharger
+
+    var body: some View {
+        SettingRow("Auto-charge (smart plug)") {
+            Toggle("Auto-charge (smart plug)", isOn: $autoCharger.isEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+
+        if autoCharger.isEnabled {
+            SettingRow("Start charging at") {
+                percentPicker("Start charging at", selection: $autoCharger.startPercent, choices: autoCharger.startChoices)
+            }
+            SettingRow("Stop charging at") {
+                percentPicker("Stop charging at", selection: $autoCharger.stopPercent, choices: autoCharger.stopChoices)
+            }
+            status
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        HStack(spacing: 6) {
+            if !autoCharger.isSetUp {
+                Text("Plug not set up. Run Scripts/set-plug-credentials.sh.")
+                    .foregroundStyle(.red)
+            } else {
+                Text(autoCharger.lastEvent ?? "Waiting for the battery to reach a level.")
+                    .foregroundStyle(autoCharger.lastEventFailed ? .red : .secondary)
+                Spacer(minLength: 4)
+                Button("Check plug") { autoCharger.checkPlug() }
+                    .buttonStyle(.link)
+            }
+        }
+        .font(.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func percentPicker(_ title: String, selection: Binding<Int>, choices: [Int]) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(choices, id: \.self) { percent in
+                Text("\(percent)%").tag(percent)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
     }
 }
 

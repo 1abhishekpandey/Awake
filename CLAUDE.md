@@ -21,3 +21,6 @@ Every change must end with a full replacement of the installed app. Never patch 
 - Never run `sfltool` in any form. `resetbtm` wipes every login item on the Mac. The user checks Login Items in System Settings.
 - Keep awake with IOKit power assertions only. Never simulate input.
 - Pure logic (day splitting, reset time, weekend rule, battery cutoff) lives in `AwakeMath.swift`, with tests. Run `swift test` before installing.
+- Smart plug secrets (device ID, local key, IP) live only in the login Keychain (`Scripts/set-plug-credentials.sh`). Never put them in the repo, tests, docs or logs; tests use fake values.
+- Auto-charge talks to the plug on the LAN only. Never add a Tuya cloud path.
+- The Claude Code shell can't reach LAN devices (macOS Local Network privacy), so test the plug through the app ("Check plug") or Terminal.app, not from the session.

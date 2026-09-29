@@ -134,6 +134,51 @@ enum AwakeMath {
         guard !onAC, let charge else { return false }
         return charge < threshold
     }
+
+    // MARK: Auto-charge (smart plug)
+
+    /// Start and stop levels move in 5% steps.
+    static let chargeStep = 5
+    static let defaultChargeStart = 30
+    static let defaultChargeStop = 90
+
+    /// "Start charging at" choices: above the cutoff and below the stop level.
+    static func chargeStartChoices(cutoff: Int, stop: Int) -> [Int] {
+        Array(stride(from: cutoff + chargeStep, through: stop - chargeStep, by: chargeStep))
+    }
+
+    /// "Stop charging at" choices: above the start level, up to 100%.
+    static func chargeStopChoices(start: Int) -> [Int] {
+        Array(stride(from: start + chargeStep, through: 100, by: chargeStep))
+    }
+
+    /// Makes the levels valid for `cutoff`: cutoff < start < stop <= 100, on the
+    /// 5% grid. A start at or below the cutoff moves up to just above it, and a
+    /// stop that is no longer above the start moves up with it.
+    static func clampedChargeLevels(cutoff: Int, start: Int, stop: Int) -> (start: Int, stop: Int) {
+        let snap = { (value: Int) in (value / chargeStep) * chargeStep }
+        let clampedStart = min(max(snap(start), cutoff + chargeStep), 100 - chargeStep)
+        let clampedStop = min(max(snap(stop), clampedStart + chargeStep), 100)
+        return (clampedStart, clampedStop)
+    }
+
+    enum PlugAction: Equatable {
+        case turnOn
+        case turnOff
+    }
+
+    /// What the smart plug should do now, or nil to leave it alone.
+    ///
+    /// - On battery at or below `start`: turn the charger on.
+    /// - Charging at or above `stop`: turn it off.
+    /// - Anything in between: nothing, so a manual switch in the app or on the
+    ///   plug is never undone until the next level is reached.
+    static func plugAction(onAC: Bool, charge: Int?, start: Int, stop: Int) -> PlugAction? {
+        guard let charge else { return nil }
+        if !onAC && charge <= start { return .turnOn }
+        if onAC && charge >= stop { return .turnOff }
+        return nil
+    }
 }
 
 // MARK: - Keep-awake mode

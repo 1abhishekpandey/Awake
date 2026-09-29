@@ -20,6 +20,17 @@ enum Notifier {
         }
     }
 
+    /// A one-off notification. Each post replaces the previous one with the same title.
+    static func post(title: String, body: String) {
+        guard isAvailable else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "message-\(title)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
     static func postGoalReached() {
         guard isAvailable else { return }
         let content = UNMutableNotificationContent()

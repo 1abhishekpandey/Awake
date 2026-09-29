@@ -50,6 +50,7 @@ final class PowerController {
             guard batteryCutoffPercent != oldValue else { return }
             settings.batteryCutoffPercent = batteryCutoffPercent
             recompute()
+            onCutoffChange?(batteryCutoffPercent)
         }
     }
 
@@ -67,6 +68,13 @@ final class PowerController {
     /// Fired when the lid or the battery cutoff changes, the two conditions that
     /// stop awake-time counting.
     @ObservationIgnored var onConditionsChange: (@MainActor (_ lidClosed: Bool, _ cutOff: Bool) -> Void)?
+
+    /// Fired when the battery charge or the AC state changes (from the power-source
+    /// notification or a fallback re-read).
+    @ObservationIgnored var onBatteryChange: (@MainActor () -> Void)?
+
+    /// Fired when "Stop everything below" changes.
+    @ObservationIgnored var onCutoffChange: (@MainActor (_ percent: Int) -> Void)?
 
     // MARK: Private state
 
@@ -162,9 +170,11 @@ final class PowerController {
     private func readSystemState() {
         lidClosed = SystemPower.isLidClosed()
         let battery = SystemPower.readBattery()
+        let batteryChanged = battery.onAC != onAC || battery.percent != batteryPercent
         onAC = battery.onAC
         batteryPercent = battery.percent
         lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        if batteryChanged { onBatteryChange?() }
     }
 
     fileprivate func lidMayHaveChanged() {
@@ -180,6 +190,7 @@ final class PowerController {
         onAC = battery.onAC
         batteryPercent = battery.percent
         recompute()
+        onBatteryChange?()
     }
 
     fileprivate func lowPowerModeMayHaveChanged() {

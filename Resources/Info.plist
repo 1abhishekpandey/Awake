@@ -28,6 +28,8 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 Abhishek. Personal use.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Awake switches your Mac charger's smart plug on and off over your home network.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
