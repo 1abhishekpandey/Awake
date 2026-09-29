@@ -28,17 +28,6 @@ final class AutoCharger {
 
     // MARK: Settings
 
-    var isEnabled: Bool {
-        didSet {
-            guard isEnabled != oldValue else { return }
-            settings.autoChargeEnabled = isEnabled
-            handledAction = nil
-            manualOverride = nil
-            refreshSetupState()
-            evaluateLast()
-        }
-    }
-
     var startPercent: Int {
         didSet { levelsChanged(oldStart: oldValue, oldStop: stopPercent) }
     }
@@ -101,7 +90,6 @@ final class AutoCharger {
         )
         startPercent = levels.start
         stopPercent = levels.stop
-        isEnabled = settings.autoChargeEnabled
         isSetUp = hasCredentials()
         settings.chargeStartPercent = levels.start
         settings.chargeStopPercent = levels.stop
@@ -124,7 +112,8 @@ final class AutoCharger {
     /// Called with every battery reading. Cheap when there is nothing to do.
     func evaluate(onAC: Bool, charge: Int?, now: Date = .now) {
         last = (onAC, charge)
-        guard isEnabled else { return }
+        // Always on once the plug is set up; there is no separate switch.
+        guard isSetUp else { return }
 
         guard let action = AwakeMath.plugAction(onAC: onAC, charge: charge, start: startPercent, stop: stopPercent) else {
             // Between the levels (or charging started): the zone is done.

@@ -160,13 +160,12 @@ private final class FakePlug: @unchecked Sendable {
 struct AutoChargerTests {
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func makeCharger(plug: FakePlug, enabled: Bool = true) -> (AutoCharger, [String]) {
+    private func makeCharger(plug: FakePlug, setUp: Bool = true) -> (AutoCharger, [String]) {
         let settings = InMemorySettingsStore()
-        settings.autoChargeEnabled = enabled
         settings.chargeStartPercent = 30
         settings.chargeStopPercent = 90
         let charger = AutoCharger(
-            settings: settings, cutoffPercent: 20, client: plug.client, hasCredentials: { true }, notify: { _, _ in }
+            settings: settings, cutoffPercent: 20, client: plug.client, hasCredentials: { setUp }, notify: { _, _ in }
         )
         return (charger, [])
     }
@@ -176,10 +175,10 @@ struct AutoChargerTests {
         for _ in 0..<50 { await Task.yield() }
     }
 
-    @Test("Disabled: never touches the plug")
-    func disabled() async {
+    @Test("Plug not set up: never touches the plug")
+    func notSetUp() async {
         let plug = FakePlug()
-        let (charger, _) = makeCharger(plug: plug, enabled: false)
+        let (charger, _) = makeCharger(plug: plug, setUp: false)
         charger.evaluate(onAC: false, charge: 10, now: t0)
         await settle()
         #expect(plug.commands.isEmpty)
@@ -255,7 +254,7 @@ struct AutoChargerTests {
     func buttonFlipsUnknownState() async {
         let plug = FakePlug()
         plug.isOn = true
-        let (charger, _) = makeCharger(plug: plug, enabled: false)
+        let (charger, _) = makeCharger(plug: plug)
         charger.togglePlug(now: t0)
         await settle()
         #expect(plug.commands == [.query, .set(on: false)])

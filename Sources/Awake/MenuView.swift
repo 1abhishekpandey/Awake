@@ -368,46 +368,36 @@ private struct SettingsSection: View {
     }
 }
 
-/// Auto-charge: the switch, the two levels (5% steps, start always above the
-/// cutoff), a button that flips the charger by hand, and one status line.
+/// The charger in one row: one menu for the auto-charge levels (5% steps, start
+/// always above the cutoff) and a button that flips the smart plug. Auto-charge
+/// is always on once the plug is set up. A caption appears only when something
+/// needs attention.
 private struct AutoChargeRows: View {
     @Bindable var autoCharger: AutoCharger
 
     var body: some View {
-        SettingRow("Auto-charge (smart plug)") {
-            Toggle("Auto-charge (smart plug)", isOn: $autoCharger.isEnabled)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+        HStack(spacing: 6) {
+            Text("Charger")
+                .font(.callout)
+            Spacer(minLength: 4)
+            levelsMenu
+            chargerButton
         }
+        .frame(minHeight: 22)
 
-        if autoCharger.isEnabled {
-            SettingRow("Start charging at") {
-                percentPicker("Start charging at", selection: $autoCharger.startPercent, choices: autoCharger.startChoices)
-            }
-            SettingRow("Stop charging at") {
-                percentPicker("Stop charging at", selection: $autoCharger.stopPercent, choices: autoCharger.stopChoices)
-            }
-        }
-
-        if autoCharger.isSetUp {
-            SettingRow("Mac charger") {
-                chargerButton
-            }
-            if let event = autoCharger.lastEvent {
-                Text(event)
-                    .font(.caption)
-                    .foregroundStyle(autoCharger.lastEventFailed ? .red : .secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else if autoCharger.isEnabled {
-            Text("Plug not set up. Run Scripts/set-plug-credentials.sh.")
+        if let problem {
+            Text(problem)
                 .font(.caption)
                 .foregroundStyle(.red)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// Only failures and a missing setup are shown; the last success is in the button's tooltip.
+    private var problem: String? {
+        if !autoCharger.isSetUp { return "Plug not set up. Run Scripts/set-plug-credentials.sh." }
+        return autoCharger.lastEventFailed ? autoCharger.lastEvent : nil
     }
 
     /// One button: shows whether the charger is on and flips it when clicked.
@@ -416,32 +406,46 @@ private struct AutoChargeRows: View {
         return Button {
             autoCharger.togglePlug()
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 3) {
                 if autoCharger.isBusy {
                     ProgressView().controlSize(.mini)
                 } else {
                     Image(systemName: on == true ? "bolt.fill" : "bolt.slash")
                 }
-                Text(on == nil ? "On / Off" : on! ? "On" : "Off")
-                    .frame(minWidth: 44)
+                Text(on == nil ? "–" : on! ? "On" : "Off")
+                    .frame(minWidth: 22)
             }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .tint(on == true ? .green : nil)
-        .disabled(autoCharger.isBusy)
-        .help(on == true ? "Turn the Mac charger off" : "Turn the Mac charger on")
+        .disabled(autoCharger.isBusy || !autoCharger.isSetUp)
+        .help(buttonHelp)
     }
 
-    private func percentPicker(_ title: String, selection: Binding<Int>, choices: [Int]) -> some View {
-        Picker(title, selection: selection) {
-            ForEach(choices, id: \.self) { percent in
-                Text("\(percent)%").tag(percent)
+    private var buttonHelp: String {
+        let action = autoCharger.plugIsOn == true ? "Turn the Mac charger off" : "Turn the Mac charger on"
+        guard let event = autoCharger.lastEvent, !autoCharger.lastEventFailed else { return action }
+        return "\(action)\nLast: \(event)"
+    }
+
+    /// "20–95%": one menu listing both levels.
+    private var levelsMenu: some View {
+        Menu {
+            Picker("Start charging at", selection: $autoCharger.startPercent) {
+                ForEach(autoCharger.startChoices, id: \.self) { Text("\($0)%").tag($0) }
             }
+            .pickerStyle(.inline)
+            Picker("Stop charging at", selection: $autoCharger.stopPercent) {
+                ForEach(autoCharger.stopChoices, id: \.self) { Text("\($0)%").tag($0) }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Text("\(autoCharger.startPercent)–\(autoCharger.stopPercent)%")
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
+        .menuStyle(.borderlessButton)
         .fixedSize()
+        .help("Auto-charge: on at \(autoCharger.startPercent)%, off at \(autoCharger.stopPercent)%")
     }
 }
 

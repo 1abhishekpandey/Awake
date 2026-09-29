@@ -17,7 +17,6 @@ final class UserDefaultsSettingsStore: SettingsStoring {
         static let dayReset = "dayResetMinute"
         static let didSetupLoginItem = "didSetupLoginItem"
         static let lastGoalNotifiedDay = "goalNotifiedDay"
-        static let autoChargeEnabled = "autoChargeEnabled"
         static let chargeStart = "chargeStartPercent"
         static let chargeStop = "chargeStopPercent"
     }
@@ -45,11 +44,6 @@ final class UserDefaultsSettingsStore: SettingsStoring {
     var lastGoalNotifiedDay: String? {
         get { defaults.string(forKey: Key.lastGoalNotifiedDay) }
         set { defaults.set(newValue, forKey: Key.lastGoalNotifiedDay) }
-    }
-
-    var autoChargeEnabled: Bool {
-        get { defaults.object(forKey: Key.autoChargeEnabled) as? Bool ?? SettingsDefaults.autoChargeEnabled }
-        set { defaults.set(newValue, forKey: Key.autoChargeEnabled) }
     }
 
     var chargeStartPercent: Int {

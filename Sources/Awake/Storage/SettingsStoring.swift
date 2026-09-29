@@ -17,8 +17,6 @@ protocol SettingsStoring: AnyObject {
     var didSetupLoginItem: Bool { get set }
     /// Work-day key (`yyyy-MM-dd`) for which the 8-hour notification was already sent.
     var lastGoalNotifiedDay: String? { get set }
-    /// Auto-charge: switch the smart plug on and off at the levels below.
-    var autoChargeEnabled: Bool { get set }
     /// "Start charging at", in percent.
     var chargeStartPercent: Int { get set }
     /// "Stop charging at", in percent.
@@ -37,7 +35,6 @@ enum SettingsDefaults {
     static let batteryCutoffPercent = AwakeMath.defaultCutoff
     static let dayResetMinute = AwakeMath.defaultResetMinute
     static let didSetupLoginItem = false
-    static let autoChargeEnabled = false
     static let chargeStartPercent = AwakeMath.defaultChargeStart
     static let chargeStopPercent = AwakeMath.defaultChargeStop
 }

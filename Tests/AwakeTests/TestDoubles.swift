@@ -42,7 +42,6 @@ final class InMemorySettingsStore: SettingsStoring {
     var dayResetMinute = SettingsDefaults.dayResetMinute
     var didSetupLoginItem = SettingsDefaults.didSetupLoginItem
     var lastGoalNotifiedDay: String?
-    var autoChargeEnabled = SettingsDefaults.autoChargeEnabled
     var chargeStartPercent = SettingsDefaults.chargeStartPercent
     var chargeStopPercent = SettingsDefaults.chargeStopPercent
 
