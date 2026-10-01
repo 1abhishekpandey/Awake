@@ -56,6 +56,52 @@ struct TuyaProtocolTests {
     }
 }
 
+// MARK: - Retrying
+
+/// Counts calls so the retry tests can see how many attempts ran.
+private actor CallCounter {
+    private(set) var count = 0
+    func next() -> Int { count += 1; return count }
+}
+
+@Suite("Plug retries")
+struct PlugRetryTests {
+    @Test("A dropped connection is retried until the plug answers")
+    func retriesDrop() async throws {
+        let calls = CallCounter()
+        let result = try await SmartPlug.retrying(attempts: 3, delay: .zero) {
+            if await calls.next() == 1 { throw SmartPlug.PlugError.dropped }
+            return "on"
+        }
+        #expect(result == "on")
+        #expect(await calls.count == 2)
+    }
+
+    @Test("Gives up after the last attempt")
+    func givesUp() async {
+        let calls = CallCounter()
+        await #expect(throws: SmartPlug.PlugError.self) {
+            try await SmartPlug.retrying(attempts: 3, delay: .zero) { () async throws -> Int in
+                _ = await calls.next()
+                throw SmartPlug.PlugError.dropped
+            }
+        }
+        #expect(await calls.count == 3)
+    }
+
+    @Test("Other errors fail straight away")
+    func noRetryOnTimeout() async {
+        let calls = CallCounter()
+        await #expect(throws: SmartPlug.PlugError.self) {
+            try await SmartPlug.retrying(attempts: 3, delay: .zero) { () async throws -> Int in
+                _ = await calls.next()
+                throw SmartPlug.PlugError.timedOut
+            }
+        }
+        #expect(await calls.count == 1)
+    }
+}
+
 // MARK: - Credentials
 
 @Suite("Plug credentials")
