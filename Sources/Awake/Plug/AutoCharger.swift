@@ -4,6 +4,8 @@ import Observation
 /// Switches the smart plug the Mac's charger is on: on when the battery falls to
 /// "Start charging at", off when charging reaches "Stop charging at".
 ///
+/// The menu's switch turns all of this off: while off, Awake never talks to the plug.
+///
 /// It never polls. `evaluate` runs when macOS reports a battery change and on the
 /// app's existing 30-second tick (which only retries; no network unless needed).
 @MainActor
@@ -37,6 +39,15 @@ final class AutoCharger {
     }
 
     private(set) var cutoffPercent: Int
+
+    /// The "Charger" switch. Off: no automatic switching, no reads, no button.
+    var isEnabled: Bool {
+        didSet {
+            guard isEnabled != oldValue else { return }
+            settings.plugEnabled = isEnabled
+            enabledChanged()
+        }
+    }
 
     var startChoices: [Int] { AwakeMath.chargeStartChoices(cutoff: cutoffPercent, stop: stopPercent) }
     var stopChoices: [Int] { AwakeMath.chargeStopChoices(start: startPercent) }
@@ -91,6 +102,7 @@ final class AutoCharger {
         startPercent = levels.start
         stopPercent = levels.stop
         isSetUp = hasCredentials()
+        isEnabled = settings.plugEnabled
         settings.chargeStartPercent = levels.start
         settings.chargeStopPercent = levels.stop
     }
@@ -112,8 +124,7 @@ final class AutoCharger {
     /// Called with every battery reading. Cheap when there is nothing to do.
     func evaluate(onAC: Bool, charge: Int?, now: Date = .now) {
         last = (onAC, charge)
-        // Always on once the plug is set up; there is no separate switch.
-        guard isSetUp else { return }
+        guard isEnabled, isSetUp else { return }
 
         guard let action = AwakeMath.plugAction(onAC: onAC, charge: charge, start: startPercent, stop: stopPercent) else {
             // Between the levels (or charging started): the zone is done.
@@ -149,7 +160,7 @@ final class AutoCharger {
     /// Reads whether the plug is on. Called when the menu opens; the first call
     /// also triggers macOS's Local Network prompt.
     func refreshPlugState() {
-        guard isSetUp, !inFlight else { return }
+        guard isEnabled, isSetUp, !inFlight else { return }
         run { client in
             let on = try await client(.query)
             self.plugIsOn = on
@@ -161,7 +172,7 @@ final class AutoCharger {
     /// The menu's charger button: flips the plug. Auto-charge then leaves this
     /// choice alone until the battery reaches the next level.
     func togglePlug(now: Date = .now) {
-        guard !inFlight else { return }
+        guard isEnabled, !inFlight else { return }
         let known = plugIsOn
         run { client in
             let current: Bool
@@ -224,6 +235,24 @@ final class AutoCharger {
     private func record(_ event: String, failed: Bool) {
         lastEvent = event
         lastEventFailed = failed
+    }
+
+    /// Starts fresh either way: turning off clears the shown status, and turning
+    /// back on acts on the current battery level straight away.
+    private func enabledChanged() {
+        handledAction = nil
+        handledAt = nil
+        lastFailureAt = nil
+        manualOverride = nil
+        notifiedFailure = false
+        notifiedNotCharging = false
+        lastEvent = nil
+        lastEventFailed = false
+        plugIsOn = nil
+        if isEnabled {
+            evaluateLast()
+            refreshPlugState()
+        }
     }
 
     private func evaluateLast() {

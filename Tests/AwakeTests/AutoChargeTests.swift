@@ -206,8 +206,9 @@ private final class FakePlug: @unchecked Sendable {
 struct AutoChargerTests {
     let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func makeCharger(plug: FakePlug, setUp: Bool = true) -> (AutoCharger, [String]) {
-        let settings = InMemorySettingsStore()
+    private func makeCharger(
+        plug: FakePlug, setUp: Bool = true, settings: InMemorySettingsStore = InMemorySettingsStore()
+    ) -> (AutoCharger, [String]) {
         settings.chargeStartPercent = 30
         settings.chargeStopPercent = 90
         let charger = AutoCharger(
@@ -228,6 +229,55 @@ struct AutoChargerTests {
         charger.evaluate(onAC: false, charge: 10, now: t0)
         await settle()
         #expect(plug.commands.isEmpty)
+    }
+
+    @Test("The plug is on by default")
+    func enabledByDefault() {
+        let (charger, _) = makeCharger(plug: FakePlug())
+        #expect(charger.isEnabled)
+    }
+
+    @Test("Switched off: never touches the plug, and the choice is saved")
+    func disabled() async {
+        let plug = FakePlug()
+        let settings = InMemorySettingsStore()
+        let (charger, _) = makeCharger(plug: plug, settings: settings)
+        charger.isEnabled = false
+        charger.evaluate(onAC: false, charge: 10, now: t0)
+        charger.refreshPlugState()
+        charger.togglePlug(now: t0)
+        await settle()
+        #expect(plug.commands.isEmpty)
+        #expect(settings.plugEnabled == false)
+
+        let (reopened, _) = makeCharger(plug: plug, settings: settings)
+        #expect(!reopened.isEnabled)
+    }
+
+    @Test("Switching off clears a shown failure")
+    func disablingClearsFailure() async {
+        let plug = FakePlug()
+        plug.fail = true
+        let (charger, _) = makeCharger(plug: plug)
+        charger.evaluate(onAC: false, charge: 25, now: t0)
+        await settle()
+        #expect(charger.lastEventFailed)
+        charger.isEnabled = false
+        #expect(!charger.lastEventFailed)
+        #expect(charger.lastEvent == nil)
+    }
+
+    @Test("Switching back on acts on the current battery level")
+    func reenabling() async {
+        let plug = FakePlug()
+        let (charger, _) = makeCharger(plug: plug)
+        charger.isEnabled = false
+        charger.evaluate(onAC: false, charge: 25, now: t0)
+        await settle()
+        #expect(plug.commands.isEmpty)
+        charger.isEnabled = true
+        await settle()
+        #expect(plug.commands.first == .set(on: true))
     }
 
     @Test("Falling to the start level switches on once, not on every 1% after")

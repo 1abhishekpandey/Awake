@@ -19,6 +19,7 @@ final class UserDefaultsSettingsStore: SettingsStoring {
         static let lastGoalNotifiedDay = "goalNotifiedDay"
         static let chargeStart = "chargeStartPercent"
         static let chargeStop = "chargeStopPercent"
+        static let plugEnabled = "plugEnabled"
     }
 
     var keepAwakeMode: String? {
@@ -54,6 +55,11 @@ final class UserDefaultsSettingsStore: SettingsStoring {
     var chargeStopPercent: Int {
         get { defaults.object(forKey: Key.chargeStop) as? Int ?? SettingsDefaults.chargeStopPercent }
         set { defaults.set(newValue, forKey: Key.chargeStop) }
+    }
+
+    var plugEnabled: Bool {
+        get { defaults.object(forKey: Key.plugEnabled) as? Bool ?? SettingsDefaults.plugEnabled }
+        set { defaults.set(newValue, forKey: Key.plugEnabled) }
     }
 
     var legacyKeepAwakeEnabled: Bool? { defaults.object(forKey: Key.legacyKeepAwake) as? Bool }

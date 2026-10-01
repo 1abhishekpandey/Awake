@@ -44,6 +44,7 @@ final class InMemorySettingsStore: SettingsStoring {
     var lastGoalNotifiedDay: String?
     var chargeStartPercent = SettingsDefaults.chargeStartPercent
     var chargeStopPercent = SettingsDefaults.chargeStopPercent
+    var plugEnabled = SettingsDefaults.plugEnabled
 
     // The pre-mode keep-awake settings, `nil` when "never saved".
     var legacyKeepAwakeEnabled: Bool?

@@ -43,7 +43,7 @@ It pauses by itself when:
 
 ## Auto-charge (smart plug)
 
-Plug the Mac's charger into a Tuya-based smart plug (for example Wipro). Once the plug is set up (see below), Awake switches it for you. There is no on/off switch for this; it's always on.
+Plug the Mac's charger into a Tuya-based smart plug (for example Wipro). Once the plug is set up (see below), Awake switches it for you. It's on by default; the switch at the end of the Charger row turns it off.
 
 - **On** when the Mac is on battery and falls to the start level (default 30%).
 - **Off** when the Mac is charging and reaches the stop level (default 90%).
@@ -52,17 +52,19 @@ Plug the Mac's charger into a Tuya-based smart plug (for example Wipro). Once th
 The menu shows it in one row:
 
 ```
-Charger              30–90% ▾   [⚡ Off]
+Charger              30–90% ▾   [⚡ Off]   (●)
 ```
 
 - **30–90% ▾** sets both levels. Click it to pick "Start charging at" and "Stop charging at".
 - **[⚡ Off]** shows whether the charger is on. Click it to flip it. Your choice holds until the battery reaches the other level. For example, turn it on at 95% and it stays on; auto-charge takes over again when the battery next falls to the start level. Hover over it to see the last thing that happened.
+- **(●)** turns the plug on or off in Awake. Off means Awake never talks to the plug: no automatic switching and no button. Turn it back on and Awake acts on the current battery level straight away.
 
 Details:
 
 - Both levels move in 5% steps. Start is always above "Stop everything below". Stop goes up to 100%.
 - **It talks to the plug over your home Wi-Fi only.** No cloud.
 - **No polling.** macOS tells the app when the battery changes.
+- **The plug often drops the first connection after sitting idle.** Awake retries up to 3 times, a second apart, before showing an error.
 - **If the plug doesn't answer**, it tries again a minute later and sends a notification.
 - **If the Mac isn't charging a minute after switching on**, you get a notification.
 - A red line appears under the row only when something is wrong, like the plug not answering.

@@ -369,9 +369,9 @@ private struct SettingsSection: View {
 }
 
 /// The charger in one row: one menu for the auto-charge levels (5% steps, start
-/// always above the cutoff) and a button that flips the smart plug. Auto-charge
-/// is always on once the plug is set up. A caption appears only when something
-/// needs attention.
+/// always above the cutoff), a button that flips the smart plug, and a switch
+/// that turns the plug off in Awake altogether. A caption appears only when
+/// something needs attention.
 private struct AutoChargeRows: View {
     @Bindable var autoCharger: AutoCharger
 
@@ -380,12 +380,19 @@ private struct AutoChargeRows: View {
             Text("Charger")
                 .font(.callout)
             Spacer(minLength: 4)
-            levelsMenu
-            chargerButton
+            if autoCharger.isEnabled {
+                levelsMenu
+                chargerButton
+            }
+            Toggle("Use the smart plug", isOn: $autoCharger.isEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help(autoCharger.isEnabled ? "Stop using the smart plug" : "Use the smart plug")
         }
         .frame(minHeight: 22)
 
-        if let problem {
+        if autoCharger.isEnabled, let problem {
             Text(problem)
                 .font(.caption)
                 .foregroundStyle(.red)
