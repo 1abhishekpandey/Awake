@@ -15,6 +15,7 @@ The menu bar shows only an icon. Click it to see today's time, the week, and the
 | ☕️ empty cup | Off. The Mac sleeps normally |
 | 💤 moon | Paused: lid closed or Low Power Mode |
 | 🔋 low battery | Stopped: battery is below your cutoff |
+| 💤 zzz | Halted by an agent (see below) |
 
 ## Keep awake
 
@@ -31,6 +32,10 @@ It pauses by itself when:
 - **the lid is closed**, so closing the lid always lets the Mac sleep.
 - **Low Power Mode is on**.
 - **the battery is low.** "Stop everything below" (default 20%) stops the whole app while on battery below that level. It starts again when you plug in or the charge comes back up.
+
+## Sleep when agent is done
+
+Off by default. Turn the switch on before you leave a long agent run. When the agent writes `true` to `~/.config/awake/sleep-at`, Awake halts keep-awake, the charger (switched off) and time tracking, then deletes the file. The switch turns itself off after each halt, and turning it on clears any old signal. The halt ends on the next wake from sleep, a restart, or **Resume** in the menu. The `/sleep-when-done` Claude Code command tells an agent to send the signal.
 
 ## Awake time
 
@@ -116,6 +121,7 @@ Scripts/set-plug-credentials.sh saves the plug details to the Keychain
 Sources/Awake/
   AwakeApp.swift                app entry, menu bar icon
   AppModel.swift                connects everything: timer, sleep/wake, quit
+  AgentSleep.swift              "Sleep when agent is done": the signal file and the halt
   PowerController.swift         keep-awake, lid, battery, Low Power Mode
   KeepAwakeSettings.swift       the keep-awake mode setting
   SystemPower.swift             reads lid and battery from macOS

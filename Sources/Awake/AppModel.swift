@@ -11,6 +11,7 @@ final class AppModel {
     let tracker: AwakeTracker
     let loginItem: LoginItem
     let autoCharger: AutoCharger
+    let agentSleep: AgentSleep
 
     private var timer: Timer?
     private var sigtermSource: DispatchSourceSignal?
@@ -23,10 +24,11 @@ final class AppModel {
         tracker = AwakeTracker(store: FileHistoryStore(), settings: settings)
         loginItem = LoginItem(settings: settings)
         autoCharger = AutoCharger(settings: settings, cutoffPercent: power.batteryCutoffPercent)
+        agentSleep = AgentSleep(settings: settings)
 
         // Lid and battery-cutoff changes start or stop counting immediately.
-        power.onConditionsChange = { [tracker] lidClosed, cutOff in
-            tracker.update(lidClosed: lidClosed, cutOff: cutOff)
+        power.onConditionsChange = { [tracker] lidClosed, stopped in
+            tracker.update(lidClosed: lidClosed, cutOff: stopped)
         }
         tracker.start(lidClosed: power.lidClosed, cutOff: power.isCutOff)
 
@@ -34,6 +36,19 @@ final class AppModel {
         power.onBatteryChange = { [weak self] in self?.evaluateAutoCharge() }
         power.onCutoffChange = { [autoCharger] percent in autoCharger.cutoffChanged(to: percent) }
         evaluateAutoCharge()
+
+        // An agent's "done" signal halts keep-awake, the charger and counting together.
+        agentSleep.onHaltChange = { [power, autoCharger] haltedAt in
+            power.setHaltedByAgent(at: haltedAt)
+            autoCharger.setHalted(haltedAt != nil)
+            if let haltedAt {
+                Notifier.post(
+                    title: "Awake halted by agent",
+                    body: "Your agent finished at \(haltedAt.formatted(date: .omitted, time: .shortened)). Keep-awake and the charger are off until the Mac next wakes."
+                )
+            }
+        }
+        agentSleep.check()
 
         startTimer()
         observeSleepAndQuit()
@@ -50,6 +65,7 @@ final class AppModel {
         loginItem.refresh()
         autoCharger.refreshSetupState()
         autoCharger.refreshPlugState()
+        agentSleep.check()
     }
 
     private func evaluateAutoCharge() {
@@ -71,6 +87,7 @@ final class AppModel {
     }
 
     private func tick() {
+        agentSleep.check()
         power.refresh()
         tracker.tick()
         // Retries only: a failed command, or a charger that was switched on but isn't charging.
@@ -88,6 +105,8 @@ final class AppModel {
         }
         workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: nil) { [weak self] _ in
             runOnMain {
+                // A wake from sleep ends an agent's halt.
+                self?.agentSleep.resume()
                 // Re-read the lid first: a wake with the lid closed must not count.
                 self?.power.refresh()
                 self?.tracker.didWake()

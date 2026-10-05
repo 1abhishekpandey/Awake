@@ -20,6 +20,7 @@ final class UserDefaultsSettingsStore: SettingsStoring {
         static let chargeStart = "chargeStartPercent"
         static let chargeStop = "chargeStopPercent"
         static let plugEnabled = "plugEnabled"
+        static let agentSleepArmed = "agentSleepArmed"
     }
 
     var keepAwakeMode: String? {
@@ -60,6 +61,11 @@ final class UserDefaultsSettingsStore: SettingsStoring {
     var plugEnabled: Bool {
         get { defaults.object(forKey: Key.plugEnabled) as? Bool ?? SettingsDefaults.plugEnabled }
         set { defaults.set(newValue, forKey: Key.plugEnabled) }
+    }
+
+    var agentSleepArmed: Bool {
+        get { defaults.object(forKey: Key.agentSleepArmed) as? Bool ?? SettingsDefaults.agentSleepArmed }
+        set { defaults.set(newValue, forKey: Key.agentSleepArmed) }
     }
 
     var legacyKeepAwakeEnabled: Bool? { defaults.object(forKey: Key.legacyKeepAwake) as? Bool }

@@ -6,6 +6,8 @@ import Observation
 ///
 /// The menu's switch turns all of this off: while off, Awake never talks to the plug.
 ///
+/// An agent's halt switches the charger off and pauses auto-charge until resumed.
+///
 /// It never polls. `evaluate` runs when macOS reports a battery change and on the
 /// app's existing 30-second tick (which only retries; no network unless needed).
 @MainActor
@@ -63,6 +65,8 @@ final class AutoCharger {
     private(set) var plugIsOn: Bool?
     /// True while a command to the plug is running (the button shows it's busy).
     private(set) var isBusy = false
+    /// An agent halted Awake: the charger is switched off and auto-charge pauses.
+    private(set) var isHalted = false
 
     // MARK: Private state
 
@@ -83,6 +87,8 @@ final class AutoCharger {
     @ObservationIgnored private var last: (onAC: Bool, charge: Int?)?
     /// The action a manual switch is holding back (see `markManual`).
     @ObservationIgnored private var manualOverride: AwakeMath.PlugAction?
+    /// The halt's "switch off" has gone through.
+    @ObservationIgnored private var haltSwitchedOff = false
 
     init(
         settings: any SettingsStoring,
@@ -125,6 +131,12 @@ final class AutoCharger {
     func evaluate(onAC: Bool, charge: Int?, now: Date = .now) {
         last = (onAC, charge)
         guard isEnabled, isSetUp else { return }
+
+        if isHalted {
+            // Nothing automatic while halted. Only a failed "switch off" is retried.
+            if !haltSwitchedOff { switchOffForHalt(now: now) }
+            return
+        }
 
         guard let action = AwakeMath.plugAction(onAC: onAC, charge: charge, start: startPercent, stop: stopPercent) else {
             // Between the levels (or charging started): the zone is done.
@@ -235,6 +247,44 @@ final class AutoCharger {
     private func record(_ event: String, failed: Bool) {
         lastEvent = event
         lastEventFailed = failed
+    }
+
+    // MARK: Agent halt
+
+    /// An agent halted Awake (`true`) or it resumed (`false`). Halting switches the
+    /// charger off once; resuming acts on the current battery level straight away.
+    func setHalted(_ halted: Bool, now: Date = .now) {
+        guard halted != isHalted else { return }
+        isHalted = halted
+        haltSwitchedOff = false
+        if halted {
+            guard isEnabled, isSetUp else { return }
+            switchOffForHalt(now: now)
+        } else {
+            enabledChanged()
+        }
+    }
+
+    private func switchOffForHalt(now: Date) {
+        guard !inFlight else { return } // the next tick tries again
+        if let lastFailureAt, now.timeIntervalSince(lastFailureAt) < Self.retryInterval { return }
+        run { client in
+            _ = try await client(.set(on: false))
+            self.plugIsOn = false
+            self.haltSwitchedOff = true
+            self.lastFailureAt = nil
+            self.record("Charger off, halted by agent · \(Self.time(now))", failed: false)
+        } onError: { error in
+            self.lastFailureAt = now
+            self.record("\(error.localizedDescription) · \(Self.time(now))", failed: true)
+            if !self.notifiedFailure {
+                self.notifiedFailure = true
+                self.notify(
+                    "Couldn't switch the charger off",
+                    "\(error.localizedDescription) Awake will keep trying every minute."
+                )
+            }
+        }
     }
 
     /// Starts fresh either way: turning off clears the shown status, and turning

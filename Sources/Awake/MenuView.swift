@@ -12,7 +12,7 @@ struct MenuView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HeaderRow(power: model.power)
+            HeaderRow(power: model.power, agentSleep: model.agentSleep)
                 .padding(EdgeInsets(top: 14, leading: 14, bottom: 12, trailing: 14))
 
             Divider()
@@ -36,7 +36,7 @@ struct MenuView: View {
 
             SettingsSection(
                 power: model.power, tracker: model.tracker, loginItem: model.loginItem,
-                autoCharger: model.autoCharger, resetListOpen: $resetListOpen
+                autoCharger: model.autoCharger, agentSleep: model.agentSleep, resetListOpen: $resetListOpen
             )
             .padding(EdgeInsets(top: 10, leading: 14, bottom: 8, trailing: 14))
 
@@ -78,16 +78,25 @@ struct MenuView: View {
 
 private struct HeaderRow: View {
     let power: PowerController
+    let agentSleep: AgentSleep
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Awake")
-                .font(.headline)
-            // The one place that says why things are paused or stopped.
-            Text(power.statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Awake")
+                    .font(.headline)
+                // The one place that says why things are paused or stopped.
+                Text(power.statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if agentSleep.isHalted {
+                Button("Resume") { agentSleep.resume() }
+                    .controlSize(.small)
+                    .help("Turn keep-awake, the charger and time tracking back on")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -189,6 +198,7 @@ private struct LiveSections: View {
                 now: now,
                 isWeekend: calendar.isDateInWeekend(today),
                 isCutOff: model.power.isCutOff,
+                isHalted: model.power.isHaltedByAgent,
                 resetMinute: model.tracker.dayResetMinute
             )
             WeekCard(bars: weekBars, total: weekTotal)
@@ -218,6 +228,7 @@ private struct TodayCard: View {
     let now: Date
     let isWeekend: Bool
     let isCutOff: Bool
+    let isHalted: Bool
     let resetMinute: Int
 
     private var reachedGoal: Bool { seconds >= AwakeMath.dailyTarget }
@@ -261,6 +272,8 @@ private struct TodayCard: View {
             Text("Weekend — not counting")
         } else if isCutOff {
             Text("Not counting — low battery")
+        } else if isHalted {
+            Text("Not counting — halted by agent")
         } else if reachedGoal {
             Text("Done · +\(Format.duration(seconds - AwakeMath.dailyTarget)) over")
         } else {
@@ -319,6 +332,7 @@ private struct SettingsSection: View {
     let tracker: AwakeTracker
     let loginItem: LoginItem
     let autoCharger: AutoCharger
+    let agentSleep: AgentSleep
     @Binding var resetListOpen: Bool
 
     var body: some View {
@@ -339,6 +353,8 @@ private struct SettingsSection: View {
             }
 
             AutoChargeRows(autoCharger: autoCharger)
+
+            AgentSleepRows(agentSleep: agentSleep)
 
             SettingRow("Open at Login") {
                 Toggle(
@@ -453,6 +469,32 @@ private struct AutoChargeRows: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Auto-charge: on at \(autoCharger.startPercent)%, off at \(autoCharger.stopPercent)%")
+    }
+}
+
+/// "Sleep when agent is done": arms one halt. A caption says what to write while it waits.
+private struct AgentSleepRows: View {
+    let agentSleep: AgentSleep
+
+    var body: some View {
+        SettingRow("Sleep when agent is done") {
+            Toggle(
+                "Sleep when agent is done",
+                isOn: Binding(get: { agentSleep.isArmed }, set: { agentSleep.setArmed($0) })
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .help("Once, halt keep-awake, the charger and time tracking when an agent writes true to ~/.config/awake/sleep-at")
+        }
+
+        if agentSleep.isArmed {
+            Text("Waiting for true in ~/.config/awake/sleep-at")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

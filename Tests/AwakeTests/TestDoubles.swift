@@ -45,6 +45,7 @@ final class InMemorySettingsStore: SettingsStoring {
     var chargeStartPercent = SettingsDefaults.chargeStartPercent
     var chargeStopPercent = SettingsDefaults.chargeStopPercent
     var plugEnabled = SettingsDefaults.plugEnabled
+    var agentSleepArmed = SettingsDefaults.agentSleepArmed
 
     // The pre-mode keep-awake settings, `nil` when "never saved".
     var legacyKeepAwakeEnabled: Bool?

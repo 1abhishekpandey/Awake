@@ -3,8 +3,8 @@ import Observation
 
 /// Counts how long the Mac is awake each weekday.
 ///
-/// Time counts only while the system is awake, the lid is open and the battery
-/// cutoff has not stopped the app. It is independent of the keep-awake toggle:
+/// Time counts only while the system is awake, the lid is open and the app has
+/// not been stopped by the battery cutoff or halted by an agent. It is independent of the keep-awake toggle:
 /// it measures awake time, not assertion time.
 ///
 /// `lastTick` is the moment up to which time has already been added. While
@@ -56,7 +56,8 @@ final class AwakeTracker {
         updateCounting(now: now)
     }
 
-    /// The lid opened or closed, or the battery cutoff started or ended.
+    /// The lid opened or closed, or the app was stopped or started again
+    /// (battery cutoff or an agent's halt). `cutOff` covers both.
     func update(lidClosed: Bool, cutOff: Bool, now: Date = .now) {
         self.lidClosed = lidClosed
         self.cutOff = cutOff

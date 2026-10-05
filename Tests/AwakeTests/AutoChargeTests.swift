@@ -405,6 +405,91 @@ struct AutoChargerTests {
     }
 }
 
+// MARK: - Agent halt
+
+@MainActor
+@Suite("Auto-charger halted by an agent")
+struct AutoChargerHaltTests {
+    let t0 = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func makeCharger(plug: FakePlug, enabled: Bool = true) -> AutoCharger {
+        let settings = InMemorySettingsStore()
+        settings.chargeStartPercent = 30
+        settings.chargeStopPercent = 90
+        settings.plugEnabled = enabled
+        return AutoCharger(
+            settings: settings, cutoffPercent: 20, client: plug.client, hasCredentials: { true }, notify: { _, _ in }
+        )
+    }
+
+    private func settle() async {
+        for _ in 0..<50 { await Task.yield() }
+    }
+
+    @Test("Halting switches the charger off once, even mid-charge")
+    func haltSwitchesOff() async {
+        let plug = FakePlug()
+        let charger = makeCharger(plug: plug)
+        charger.evaluate(onAC: true, charge: 60, now: t0)
+        charger.setHalted(true, now: t0)
+        await settle()
+        charger.evaluate(onAC: true, charge: 61, now: t0.addingTimeInterval(30))
+        await settle()
+        #expect(plug.commands == [.set(on: false)])
+        #expect(charger.plugIsOn == false)
+    }
+
+    @Test("While halted, a low battery never switches the charger on")
+    func noAutoChargeWhileHalted() async {
+        let plug = FakePlug()
+        let charger = makeCharger(plug: plug)
+        charger.setHalted(true, now: t0)
+        await settle()
+        charger.evaluate(onAC: false, charge: 25, now: t0.addingTimeInterval(600))
+        await settle()
+        #expect(plug.commands == [.set(on: false)])
+    }
+
+    @Test("A failed switch-off is retried after a minute")
+    func retriesHalt() async {
+        let plug = FakePlug()
+        plug.fail = true
+        let charger = makeCharger(plug: plug)
+        charger.setHalted(true, now: t0)
+        await settle()
+        charger.evaluate(onAC: true, charge: 60, now: t0.addingTimeInterval(30))
+        await settle()
+        #expect(plug.commands.count == 1)
+
+        plug.fail = false
+        charger.evaluate(onAC: true, charge: 60, now: t0.addingTimeInterval(61))
+        await settle()
+        #expect(plug.commands == [.set(on: false), .set(on: false)])
+        #expect(!charger.lastEventFailed)
+    }
+
+    @Test("Resuming acts on the current battery level straight away")
+    func resumeActs() async {
+        let plug = FakePlug()
+        let charger = makeCharger(plug: plug)
+        charger.setHalted(true, now: t0)
+        await settle()
+        charger.evaluate(onAC: false, charge: 25, now: t0.addingTimeInterval(600))
+        charger.setHalted(false, now: t0.addingTimeInterval(700))
+        await settle()
+        #expect(plug.commands.prefix(2) == [.set(on: false), .set(on: true)])
+    }
+
+    @Test("Plug switched off in Awake: a halt never touches it")
+    func disabledPlug() async {
+        let plug = FakePlug()
+        let charger = makeCharger(plug: plug, enabled: false)
+        charger.setHalted(true, now: t0)
+        await settle()
+        #expect(plug.commands.isEmpty)
+    }
+}
+
 private extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
 }

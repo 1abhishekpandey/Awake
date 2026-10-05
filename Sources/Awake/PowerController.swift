@@ -5,12 +5,13 @@ import IOKit.pwr_mgt
 import Observation
 
 /// Owns the power assertions and everything that decides whether to hold them:
-/// the keep-awake toggle, the lid, the battery cutoff and Low Power Mode.
+/// the keep-awake toggle, the lid, the battery cutoff, an agent's halt and Low Power Mode.
 ///
 /// The assertions are held only when ALL of these are true:
 ///   - the keep-awake toggle is on
 ///   - the lid is open
 ///   - the battery cutoff has not stopped the app
+///   - no agent has halted the app
 ///   - Low Power Mode is off
 @MainActor
 @Observable
@@ -23,6 +24,8 @@ final class PowerController {
     enum Status: Equatable {
         /// Battery below the cutoff while on battery: the whole app is dormant.
         case stopped(threshold: Int)
+        /// An agent signalled it was done: everything is off until the next wake or Resume.
+        case halted(at: Date)
         /// Mode is off.
         case off
         /// Keep-awake is on but temporarily not holding the Mac awake.
@@ -54,6 +57,17 @@ final class PowerController {
         }
     }
 
+    /// When an agent halted the app, or nil. Set by `AgentSleep`, never saved.
+    private(set) var haltedByAgentAt: Date?
+
+    func setHaltedByAgent(at date: Date?) {
+        guard date != haltedByAgentAt else { return }
+        haltedByAgentAt = date
+        recompute()
+    }
+
+    var isHaltedByAgent: Bool { haltedByAgentAt != nil }
+
     // MARK: Observed system state
 
     private(set) var lidClosed = false
@@ -65,9 +79,9 @@ final class PowerController {
     /// True while the display-sleep assertion is actually held.
     private(set) var isHoldingDisplay = false
 
-    /// Fired when the lid or the battery cutoff changes, the two conditions that
-    /// stop awake-time counting.
-    @ObservationIgnored var onConditionsChange: (@MainActor (_ lidClosed: Bool, _ cutOff: Bool) -> Void)?
+    /// Fired when the lid changes, or the app is stopped or started again by the
+    /// battery cutoff or an agent's halt: the conditions that stop awake-time counting.
+    @ObservationIgnored var onConditionsChange: (@MainActor (_ lidClosed: Bool, _ stopped: Bool) -> Void)?
 
     /// Fired when the battery charge or the AC state changes (from the power-source
     /// notification or a fallback re-read).
@@ -83,10 +97,10 @@ final class PowerController {
     @ObservationIgnored private var displayAssertion: IOPMAssertionID?
     @ObservationIgnored private var lastReported: Conditions?
 
-    /// The two conditions that stop awake-time counting.
+    /// The conditions that stop awake-time counting.
     private struct Conditions: Equatable {
         var lidClosed: Bool
-        var cutOff: Bool
+        var stopped: Bool
     }
 
     // MARK: Derived
@@ -104,10 +118,11 @@ final class PowerController {
 
     /// The keep-awake picker keeps the saved mode but cannot be changed
     /// while the app is stopped or paused.
-    var pickerLocked: Bool { isCutOff || pauseReason != nil }
+    var pickerLocked: Bool { isCutOff || isHaltedByAgent || pauseReason != nil }
 
     var status: Status {
         if isCutOff { return .stopped(threshold: batteryCutoffPercent) }
+        if let haltedByAgentAt { return .halted(at: haltedByAgentAt) }
         // A pause is reported before "off" so the header always explains why the
         // picker is disabled, even when the mode is off.
         if let reason = pauseReason { return .paused(reason) }
@@ -118,6 +133,7 @@ final class PowerController {
     var statusText: String {
         switch status {
         case .stopped(let threshold): "Stopped — battery below \(threshold)% (on battery)"
+        case .halted(let date): "Halted by agent at \(date.formatted(date: .omitted, time: .shortened))"
         case .off: "Off — Mac sleeps normally"
         case .paused(.lidClosed): "Paused — lid closed"
         case .paused(.lowPowerMode): "Paused — Low Power Mode"
@@ -131,6 +147,7 @@ final class PowerController {
     var iconName: String {
         switch status {
         case .stopped: "battery.25"
+        case .halted: "zzz"
         case .keepingAwake(screenOn: true): "sun.max.fill"
         case .keepingAwake(screenOn: false): "cup.and.saucer.fill"
         case .paused: "moon.zzz"
@@ -205,8 +222,8 @@ final class PowerController {
     /// The single place that turns state into assertions. Idempotent, so it is
     /// safe to call after any change.
     private func recompute() {
-        let cutOff = isCutOff
-        let shouldHold = !cutOff && !lidClosed && !lowPowerMode
+        let stopped = isCutOff || isHaltedByAgent
+        let shouldHold = !stopped && !lidClosed && !lowPowerMode
         let wanted = shouldHold ? keepMode.heldAssertions : KeepAwakeMode.Assertions(systemSleep: false, displaySleep: false)
 
         // Take or drop each assertion to match what the mode wants right now.
@@ -240,10 +257,10 @@ final class PowerController {
         if isHoldingDisplay != holdingDisplay { isHoldingDisplay = holdingDisplay }
 
         // Tell the awake-time tracker only when something it cares about changed.
-        let conditions = Conditions(lidClosed: lidClosed, cutOff: cutOff)
+        let conditions = Conditions(lidClosed: lidClosed, stopped: stopped)
         if conditions != lastReported {
             lastReported = conditions
-            onConditionsChange?(lidClosed, cutOff)
+            onConditionsChange?(lidClosed, stopped)
         }
     }
 

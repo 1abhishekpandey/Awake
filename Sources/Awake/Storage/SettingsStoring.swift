@@ -23,6 +23,8 @@ protocol SettingsStoring: AnyObject {
     var chargeStopPercent: Int { get set }
     /// The "Charger" switch: whether Awake uses the smart plug at all.
     var plugEnabled: Bool { get set }
+    /// The "Sleep when agent is done" switch.
+    var agentSleepArmed: Bool { get set }
 
     // The two settings `keepAwakeMode` replaced. They are read once, to migrate, and then removed.
     /// Old "Keep Mac awake" switch, or `nil` if it was never saved.
@@ -40,4 +42,5 @@ enum SettingsDefaults {
     static let chargeStartPercent = AwakeMath.defaultChargeStart
     static let chargeStopPercent = AwakeMath.defaultChargeStop
     static let plugEnabled = true
+    static let agentSleepArmed = false
 }
