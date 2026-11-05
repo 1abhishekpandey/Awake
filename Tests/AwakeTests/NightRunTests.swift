@@ -23,6 +23,8 @@ final class FakeSleepSwitch: SleepSwitching, @unchecked Sendable {
 
     func isSleepDisabled() -> Bool { disabled }
     func sleepNow() { sleeps += 1 }
+    private(set) var screenOffs = 0
+    func turnScreenOff() { screenOffs += 1 }
 
     func runSetup(completion: @escaping @Sendable (Bool) -> Void) {
         if setupSucceeds { setUp = true }

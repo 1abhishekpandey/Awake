@@ -12,6 +12,8 @@ protocol SleepSwitching: AnyObject {
     func isSleepDisabled() -> Bool
     /// Puts the Mac to sleep now.
     func sleepNow()
+    /// Turns the screen off now. The Mac keeps running.
+    func turnScreenOff()
     /// Installs the setup behind macOS's own admin password prompt. Calls back
     /// (on any thread) with true when it succeeded.
     func runSetup(completion: @escaping @Sendable (Bool) -> Void)
@@ -90,6 +92,10 @@ final class NightRun {
     func sleepNow() {
         system.sleepNow()
     }
+
+    func turnScreenOff() {
+        system.turnScreenOff()
+    }
 }
 
 /// The real setting, changed through `pmset` under a sudo rule that allows only
@@ -124,6 +130,10 @@ final class SystemSleepSwitch: SleepSwitching, @unchecked Sendable {
 
     func sleepNow() {
         _ = Self.run(Self.pmset, ["sleepnow"])
+    }
+
+    func turnScreenOff() {
+        _ = Self.run(Self.pmset, ["displaysleepnow"])
     }
 
     func runSetup(completion: @escaping @Sendable (Bool) -> Void) {

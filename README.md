@@ -41,6 +41,7 @@ For leaving the Mac running overnight with the lid closed.
 
 - **It ends in only three cases:** the agent's sleep signal, the battery dropping below "Stop everything below" while on battery, or macOS reporting the Mac is too hot. Then the mode goes back to **Off**. If the lid is closed, the Mac goes to sleep about 10 seconds later.
 - **The charger, Low Power Mode and the lid don't end it.** There is no time limit.
+- **Closing the lid turns the screen off** while the Mac keeps running. If the closed lid presses keys and wakes the screen, Awake turns it off again within 30 seconds.
 - **Awake time doesn't count while the lid is closed**, the same as the other modes.
 - **It never comes back after Awake restarts.** Awake always starts with it off.
 

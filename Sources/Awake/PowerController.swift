@@ -121,6 +121,8 @@ final class PowerController {
     @ObservationIgnored private var systemAssertion: IOPMAssertionID?
     @ObservationIgnored private var displayAssertion: IOPMAssertionID?
     @ObservationIgnored private var lastReported: Conditions?
+    /// The lid as last seen by `recompute`, to spot the moment it closes.
+    @ObservationIgnored private var lidWasClosed = false
 
     /// The conditions that stop awake-time counting.
     private struct Conditions: Equatable {
@@ -207,6 +209,13 @@ final class PowerController {
     func refresh() {
         readSystemState()
         recompute()
+        // A closed lid can press keys and wake the screen; put it back to sleep.
+        if isNightRunning, lidClosed { nightRun.turnScreenOff() }
+    }
+
+    /// Night run is on and nothing has stopped it.
+    private var isNightRunning: Bool {
+        keepMode == .nightRun && !isCutOff && !isHaltedByAgent
     }
 
     /// Drops every assertion and lets the Mac sleep again. Used when the app quits.
@@ -326,6 +335,11 @@ final class PowerController {
             lastReported = conditions
             onConditionsChange?(lidClosed, stopped)
         }
+
+        // In Night run a closed lid doesn't turn the screen off by itself, so do it,
+        // the same as Screen off would after its idle time.
+        if lidClosed, !lidWasClosed, nightRunning { nightRun.turnScreenOff() }
+        lidWasClosed = lidClosed
 
         if let ended {
             onModeChange?(keepMode)
