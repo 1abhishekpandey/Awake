@@ -13,7 +13,8 @@ Every change must end with a full replacement of the installed app. Never patch 
   3. Delete `~/Applications/Awake.app` completely, then copy in the fresh bundle. No merging into the old bundle.
   4. Launch the new copy, then check that it runs from `~/Applications/Awake.app` and that its binary matches the one just built.
 - There is exactly one installed copy, in `~/Applications/Awake.app`. If the script warns about another copy (for example in `/Applications`), tell the user. Do not delete it without asking.
-- After installing, confirm with `pgrep -lx Awake` and `pmset -g assertions | grep -i awake`.
+- After installing, confirm with `pgrep -lx Awake` and `pmset -g assertions | grep -i awake`. The assertion can take a few seconds to appear after launch.
+- Also confirm sleep is not left disabled: `ioreg -r -n IOPMrootDomain -d1 | grep SleepDisabled` must say `No` (unless the user is in Night run).
 - User data is not part of the app and must survive updates: `~/Library/Application Support/Awake/history.json` and the `com.abhishek.awake` defaults.
 
 ## Git
@@ -27,7 +28,14 @@ Every change must end with a full replacement of the installed app. Never patch 
 
 - Never run `sfltool` in any form. `resetbtm` wipes every login item on the Mac. The user checks Login Items in System Settings.
 - Keep awake with IOKit power assertions only. Never simulate input. The one exception is Night run, which the user asked for: it turns macOS's sleep-disabled setting (`pmset -a disablesleep`) on and off through a narrow sudo rule. Every path that ends it, plus app launch, app quit and the root safety job, must leave that setting off.
-- Pure logic (day splitting, reset time, weekend rule, battery cutoff) lives in `AwakeMath.swift`, with tests. Run `swift test` before installing.
+- Pure logic (day splitting, reset time, weekend rule, battery cutoff, Night run end rules) lives in `AwakeMath.swift`, with tests. Run `swift test` before installing.
 - Smart plug secrets (device ID, local key, IP) live only in the login Keychain (`Scripts/set-plug-credentials.sh`). Never put them in the repo, tests, docs or logs; tests use fake values.
 - Auto-charge talks to the plug on the LAN only. Never add a Tuya cloud path.
 - The Claude Code shell can't reach LAN devices (macOS Local Network privacy), so test the plug through the app (the "Mac charger" button) or Terminal.app, not from the session.
+
+## Night run
+
+- Its system side (the sudo rule, the root safety job, `pmset`) sits behind a protocol so tests use a fake. Tests must never run the real `sudo` or `pmset -a`.
+- The one-time setup needs the user's admin password, so it can't be run or tested from the Claude Code session. Ask the user to pick Night run in the menu, close the lid, then send the sleep signal.
+- The user set its rules: it ends only on the agent's sleep signal, the battery cutoff or heat. Don't add charger, Low Power Mode or timer conditions.
+- The safety job runs as root. Anything it runs must be root-owned and not writable by the user.
