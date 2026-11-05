@@ -12,6 +12,20 @@ struct KeepAwakeModeTests {
         #expect(Mode.screenCanSleep.heldAssertions == .init(systemSleep: true, displaySleep: false))
         // Screen-on holds the system assertion too: redundant, but explicit.
         #expect(Mode.screenOn.heldAssertions == .init(systemSleep: true, displaySleep: true))
+        #expect(Mode.nightRun.heldAssertions == .init(systemSleep: true, displaySleep: false))
+    }
+
+    @Test("Picker order: Off, Screen on, Screen off, Night run")
+    func pickerOrder() {
+        #expect(Mode.allCases == [.off, .screenOn, .screenCanSleep, .nightRun])
+    }
+
+    @Test("Sleep when agent is done stays on in Screen off and Night run only")
+    func agentSleepModes() {
+        #expect(Mode.screenCanSleep.keepsAgentSleepOn)
+        #expect(Mode.nightRun.keepsAgentSleepOn)
+        #expect(!Mode.screenOn.keepsAgentSleepOn)
+        #expect(!Mode.off.keepsAgentSleepOn)
     }
 
     @Test("Migration from the old two settings, all nine combinations")

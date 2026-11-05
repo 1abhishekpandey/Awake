@@ -10,6 +10,9 @@ import Observation
 ///     file is deleted, the switch turns itself off and Awake halts.
 ///   - The halt lasts until the Mac next wakes from sleep, Awake restarts, or the
 ///     user clicks Resume. It is never saved, so a restart always starts fresh.
+///
+/// In Screen off and Night run the switch is always on: it is turned on when the
+/// mode is picked, on every resume and at launch, and can't be turned off by hand.
 @MainActor
 @Observable
 final class AgentSleep {
@@ -23,6 +26,9 @@ final class AgentSleep {
     private(set) var haltedAt: Date?
 
     var isHalted: Bool { haltedAt != nil }
+
+    /// The mode keeps the switch on. Set by `AppModel` from the keep-awake mode.
+    private(set) var isRequired = false
 
     /// Fired with the halt time when a signal halts Awake, and with nil on resume.
     @ObservationIgnored var onHaltChange: (@MainActor (_ haltedAt: Date?) -> Void)?
@@ -47,8 +53,17 @@ final class AgentSleep {
         isArmed = settings.agentSleepArmed
     }
 
-    /// The menu switch. Arming always starts from a clean signal.
+    /// The mode wants the switch on (or no longer does). Turning it on here only when
+    /// it is off, so a signal already waiting at launch is not thrown away.
+    func setRequired(_ required: Bool) {
+        isRequired = required
+        if required, !isArmed, !isHalted { setArmed(true) }
+    }
+
+    /// The menu switch. Arming always starts from a clean signal. While the mode
+    /// requires the switch, it can't be turned off by hand.
     func setArmed(_ armed: Bool) {
+        if !armed, isRequired, !isHalted { return }
         if armed { clearSignal() }
         guard armed != isArmed else { return }
         isArmed = armed
@@ -59,8 +74,8 @@ final class AgentSleep {
     func check(now: Date = .now) {
         guard isArmed, !isHalted, Self.isDone(readSignal()) else { return }
         clearSignal()
-        setArmed(false)
         haltedAt = now
+        setArmed(false)
         onHaltChange?(now)
     }
 
@@ -68,6 +83,8 @@ final class AgentSleep {
     func resume() {
         guard isHalted else { return }
         haltedAt = nil
+        // A signal written during the halt is stale; arming clears it.
+        if isRequired { setArmed(true) }
         onHaltChange?(nil)
     }
 

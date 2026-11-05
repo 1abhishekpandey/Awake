@@ -130,11 +130,19 @@ private struct KeepAwakeSection: View {
                     .frame(maxWidth: .infinity)
             }
 
-            Text(power.keepMode.caption)
+            Text(caption)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .padding(.horizontal, cardInset)
+
+            if let error = power.nightRun.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, cardInset)
+            }
         }
         .padding(.vertical, cardInset)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -143,6 +151,11 @@ private struct KeepAwakeSection: View {
                 .fill(Color.primary.opacity(0.06))
         )
         .disabled(power.pickerLocked)
+    }
+
+    private var caption: String {
+        if power.nightRun.isSettingUp { return "Enter your password to set up Night run." }
+        return power.keepMode.caption
     }
 
     /// Same inner margin as the other cards, so the text lines up with them.
@@ -165,17 +178,19 @@ private struct KeepAwakeSection: View {
 private extension KeepAwakeMode {
     var segmentTitle: String {
         switch self {
-        case .off: "Off"
         case .screenCanSleep: "Screen off"
         case .screenOn: "Screen on"
+        case .nightRun: "Night run"
+        case .off: "Off"
         }
     }
 
     var caption: String {
         switch self {
-        case .off: "Mac sleeps normally."
         case .screenCanSleep: "Screen goes dark. Work keeps running."
         case .screenOn: "Screen stays lit. Work keeps running."
+        case .nightRun: "Keeps running with the lid closed."
+        case .off: "Mac sleeps normally."
         }
     }
 }
@@ -485,7 +500,10 @@ private struct AgentSleepRows: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
-            .help("Once, halt keep-awake, the charger and time tracking when an agent writes true to ~/.config/awake/sleep-at")
+            .disabled(agentSleep.isRequired)
+            .help(agentSleep.isRequired
+                ? "Always on in Screen off and Night run"
+                : "Once, halt keep-awake, the charger and time tracking when an agent writes true to ~/.config/awake/sleep-at")
         }
 
         if agentSleep.isArmed {

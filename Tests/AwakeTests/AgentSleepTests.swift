@@ -122,6 +122,50 @@ struct AgentSleepTests {
         #expect(!again.isArmed)
     }
 
+    @Test("A mode that requires the switch turns it on and keeps it on")
+    func requiredByMode() {
+        let signal = FakeSignal()
+        let (sleep, _) = make(signal)
+        sleep.setRequired(true)
+        #expect(sleep.isArmed)
+        sleep.setArmed(false) // by hand: refused
+        #expect(sleep.isArmed)
+        sleep.setRequired(false)
+        sleep.setArmed(false)
+        #expect(!sleep.isArmed)
+    }
+
+    @Test("Required: after a halt, resume turns the switch back on and drops a stale signal")
+    func requiredRearmsOnResume() {
+        let signal = FakeSignal()
+        let (sleep, halts) = make(signal)
+        sleep.setRequired(true)
+        signal.contents = "true"
+        sleep.check(now: t0)
+        #expect(sleep.isHalted)
+        #expect(!sleep.isArmed)
+
+        signal.contents = "true" // written while halted
+        sleep.resume()
+        #expect(sleep.isArmed)
+        #expect(signal.contents == nil)
+        sleep.check(now: t0.addingTimeInterval(30))
+        #expect(!sleep.isHalted)
+        #expect(halts() == [t0, nil])
+    }
+
+    @Test("Required at launch with the switch already on keeps a waiting signal")
+    func requiredKeepsWaitingSignal() {
+        let signal = FakeSignal()
+        let settings = InMemorySettingsStore()
+        settings.agentSleepArmed = true
+        signal.contents = "true"
+        let (sleep, _) = make(signal, settings: settings)
+        sleep.setRequired(true)
+        sleep.check(now: t0)
+        #expect(sleep.isHalted)
+    }
+
     @Test("The real file: written by an agent, read, then deleted")
     func realFile() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

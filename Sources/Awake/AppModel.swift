@@ -37,10 +37,22 @@ final class AppModel {
         power.onCutoffChange = { [autoCharger] percent in autoCharger.cutoffChanged(to: percent) }
         evaluateAutoCharge()
 
+        // Screen off and Night run keep "Sleep when agent is done" on.
+        agentSleep.setRequired(power.keepMode.keepsAgentSleepOn)
+        power.onModeChange = { [agentSleep] mode in
+            agentSleep.setRequired(mode.keepsAgentSleepOn)
+        }
+        power.onNightRunEnd = { reason in
+            // An agent's signal already posts its own notification.
+            guard let body = reason.notificationBody else { return }
+            Notifier.post(title: "Night run ended", body: body)
+        }
+
         // An agent's "done" signal halts keep-awake, the charger and counting together.
+        // The charger goes first, so it is switched off before a lid-closed Mac sleeps.
         agentSleep.onHaltChange = { [power, autoCharger] haltedAt in
-            power.setHaltedByAgent(at: haltedAt)
             autoCharger.setHalted(haltedAt != nil)
+            power.setHaltedByAgent(at: haltedAt)
             if let haltedAt {
                 Notifier.post(
                     title: "Awake halted by agent",
@@ -62,6 +74,7 @@ final class AppModel {
     /// Called when the popover opens so it never shows stale state.
     func refreshForDisplay() {
         power.refresh()
+        power.refreshNightRunSetup()
         loginItem.refresh()
         autoCharger.refreshSetupState()
         autoCharger.refreshPlugState()
@@ -141,5 +154,15 @@ final class AppModel {
             options: .userInitiatedAllowingIdleSystemSleep,
             reason: "Accurate awake-time tracking"
         )
+    }
+}
+
+private extension AwakeMath.NightRunEnd {
+    var notificationBody: String? {
+        switch self {
+        case .agentSignal: nil
+        case .lowBattery: "The battery fell below your cutoff. The Mac can sleep now."
+        case .tooHot: "The Mac got too hot. The Mac can sleep now."
+        }
     }
 }

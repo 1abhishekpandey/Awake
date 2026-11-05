@@ -135,6 +135,29 @@ enum AwakeMath {
         return charge < threshold
     }
 
+    // MARK: Night run
+
+    enum NightRunEnd: Equatable {
+        case agentSignal
+        case lowBattery
+        case tooHot
+    }
+
+    /// Why Night run must end now, or nil to keep running. Only these three end it:
+    /// the charger, Low Power Mode and the lid never do.
+    static func nightRunEnd(cutOff: Bool, haltedByAgent: Bool, tooHot: Bool) -> NightRunEnd? {
+        if haltedByAgent { return .agentSignal }
+        if cutOff { return .lowBattery }
+        if tooHot { return .tooHot }
+        return nil
+    }
+
+    /// macOS reports heat as nominal, fair, serious or critical. Night run ends at
+    /// serious, before macOS starts throttling hard.
+    static func isTooHot(_ state: ProcessInfo.ThermalState) -> Bool {
+        state == .serious || state == .critical
+    }
+
     // MARK: Auto-charge (smart plug)
 
     /// Start and stop levels move in 5% steps.
@@ -183,15 +206,18 @@ enum AwakeMath {
 
 // MARK: - Keep-awake mode
 
-/// What Awake is doing to keep the Mac awake: exactly one of three modes, chosen with the
-/// segmented picker in the menu.
+/// What Awake is doing to keep the Mac awake: exactly one of four modes, chosen with the
+/// segmented picker in the menu. The cases are in picker order.
 enum KeepAwakeMode: String, CaseIterable, Equatable {
     /// Nothing is held: the Mac sleeps normally.
     case off
-    /// The screen may go dark, work keeps running.
-    case screenCanSleep
     /// The screen stays lit.
     case screenOn
+    /// The screen may go dark, work keeps running.
+    case screenCanSleep
+    /// Keeps running even with the lid closed, until an agent's signal, a low battery
+    /// or heat ends it. Then the mode goes back to off.
+    case nightRun
 
     /// Which power assertions a mode holds.
     struct Assertions: Equatable {
@@ -208,7 +234,15 @@ enum KeepAwakeMode: String, CaseIterable, Equatable {
         case .off: Assertions(systemSleep: false, displaySleep: false)
         case .screenCanSleep: Assertions(systemSleep: true, displaySleep: false)
         case .screenOn: Assertions(systemSleep: true, displaySleep: true)
+        // The lid-closed part is macOS's sleep-disabled setting, not an assertion.
+        case .nightRun: Assertions(systemSleep: true, displaySleep: false)
         }
+    }
+
+    /// The modes in which "Sleep when agent is done" is always on, so an agent's
+    /// signal is never missed.
+    var keepsAgentSleepOn: Bool {
+        self == .screenCanSleep || self == .nightRun
     }
 
     /// One-time migration from the two old settings (`keepAwakeEnabled`, default on, and

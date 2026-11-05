@@ -13,6 +13,7 @@ The menu bar shows only an icon. Click it to see today's time, the week, and the
 | ☕️ filled cup | Mac awake, screen can sleep |
 | ☀️ sun | Mac awake, screen stays on |
 | ☕️ empty cup | Off. The Mac sleeps normally |
+| 🌙 moon and stars | Night run: awake even with the lid closed |
 | 💤 moon | Paused: lid closed or Low Power Mode |
 | 🔋 low battery | Stopped: battery is below your cutoff |
 | 💤 zzz | Halted by an agent (see below) |
@@ -22,20 +23,39 @@ The menu bar shows only an icon. Click it to see today's time, the week, and the
 Pick a mode at the top of the menu:
 
 - **Off**: the Mac sleeps normally.
-- **Screen off** (default): the screen goes dark, work keeps running.
 - **Screen on**: the screen stays lit.
+- **Screen off** (default): the screen goes dark, work keeps running.
+- **Night run**: keeps running even with the lid closed. See below.
 
 It works like `caffeinate`: it asks macOS not to sleep. No fake mouse moves.
 
-It pauses by itself when:
+Screen off and Screen on pause by themselves when:
 
 - **the lid is closed**, so closing the lid always lets the Mac sleep.
 - **Low Power Mode is on**.
 - **the battery is low.** "Stop everything below" (default 20%) stops the whole app while on battery below that level. It starts again when you plug in or the charge comes back up.
 
+## Night run
+
+For leaving the Mac running overnight with the lid closed.
+
+- **It ends in only three cases:** the agent's sleep signal, the battery dropping below "Stop everything below" while on battery, or macOS reporting the Mac is too hot. Then the mode goes back to **Off**. If the lid is closed, the Mac goes to sleep about 10 seconds later.
+- **The charger, Low Power Mode and the lid don't end it.** There is no time limit.
+- **Awake time doesn't count while the lid is closed**, the same as the other modes.
+- **It never comes back after Awake restarts.** Awake always starts with it off.
+
+How it works: a closed lid overrides Awake's normal "don't sleep" request. So Night run turns on macOS's own sleep-disabled setting (`pmset disablesleep`), and turns it off again when the mode ends.
+
+**One-time setup.** The first time you pick Night run, macOS asks for your password. That installs two things:
+
+- `/etc/sudoers.d/awake-night-run`: lets Awake run only `pmset -a disablesleep 0` and `pmset -a disablesleep 1`, without a password.
+- A safety job, `/Library/LaunchDaemons/com.abhishek.awake.nightrun-guard.plist`. At startup and every minute it checks: if Awake isn't running and sleep is disabled, it turns the setting off. A crash, force-quit or restart can't leave the Mac unable to sleep.
+
+To remove both: `sudo launchctl bootout system/com.abhishek.awake.nightrun-guard; sudo rm /etc/sudoers.d/awake-night-run /Library/LaunchDaemons/com.abhishek.awake.nightrun-guard.plist`
+
 ## Sleep when agent is done
 
-Off by default. Turn the switch on before you leave a long agent run. When the agent writes `true` to `~/.config/awake/sleep-at`, Awake halts keep-awake, the charger (switched off) and time tracking, then deletes the file. The switch turns itself off after each halt, and turning it on clears any old signal. The halt ends on the next wake from sleep, a restart, or **Resume** in the menu. The `/sleep-when-done` Claude Code command tells an agent to send the signal.
+Always on in **Screen off** and **Night run**. Picking either mode turns it on, and so does every Resume, wake and launch. In those modes it can't be switched off by hand. In the other modes it's off by default, so turn it on before you leave a long agent run. When the agent writes `true` to `~/.config/awake/sleep-at`, Awake halts keep-awake, the charger (switched off) and time tracking, then deletes the file. The switch turns itself off after each halt, and turning it on clears any old signal. The halt ends on the next wake from sleep, a restart, or **Resume** in the menu. The `/sleep-when-done` Claude Code command tells an agent to send the signal.
 
 ## Awake time
 

@@ -13,6 +13,11 @@ import Observation
 ///   - the battery cutoff has not stopped the app
 ///   - no agent has halted the app
 ///   - Low Power Mode is off
+///
+/// Night run is the exception: the lid and Low Power Mode don't pause it. It also
+/// turns on macOS's sleep-disabled setting, so a closed lid can't put the Mac to
+/// sleep. An agent's signal, the battery cutoff or heat end it: the mode goes back
+/// to off, and a Mac with its lid closed is put to sleep straight away.
 @MainActor
 @Observable
 final class PowerController {
@@ -44,8 +49,20 @@ final class PowerController {
     var keepMode: KeepAwakeMode { keep.mode }
 
     func setMode(_ mode: KeepAwakeMode) {
-        if keep.setMode(mode) { recompute() }
+        // Night run needs its one-time setup first; picking it starts the setup.
+        if mode == .nightRun, !nightRun.isSetUp {
+            nightRun.setUp { [weak self] success in
+                if success { self?.setMode(.nightRun) }
+            }
+            return
+        }
+        guard keep.setMode(mode) else { return }
+        recompute()
+        onModeChange?(keepMode)
     }
+
+    /// macOS's sleep-disabled setting and the one-time setup.
+    @ObservationIgnored let nightRun: NightRun
 
     /// Stop everything when on battery below this charge, in percent.
     var batteryCutoffPercent: Int {
@@ -74,6 +91,8 @@ final class PowerController {
     private(set) var onAC = true
     private(set) var batteryPercent: Int?
     private(set) var lowPowerMode = false
+    /// macOS reports the Mac is hot enough to end Night run.
+    private(set) var tooHot = false
     /// True while the system-sleep assertion is actually held.
     private(set) var isHolding = false
     /// True while the display-sleep assertion is actually held.
@@ -89,6 +108,12 @@ final class PowerController {
 
     /// Fired when "Stop everything below" changes.
     @ObservationIgnored var onCutoffChange: (@MainActor (_ percent: Int) -> Void)?
+
+    /// Fired when the mode changes, by the picker or because Night run ended.
+    @ObservationIgnored var onModeChange: (@MainActor (_ mode: KeepAwakeMode) -> Void)?
+
+    /// Fired when Night run ends by itself, with the reason.
+    @ObservationIgnored var onNightRunEnd: (@MainActor (_ reason: AwakeMath.NightRunEnd) -> Void)?
 
     // MARK: Private state
 
@@ -111,6 +136,7 @@ final class PowerController {
     }
 
     private var pauseReason: PauseReason? {
+        if keepMode == .nightRun { return nil }
         if lidClosed { return .lidClosed }
         if lowPowerMode { return .lowPowerMode }
         return nil
@@ -137,6 +163,7 @@ final class PowerController {
         case .off: "Off — Mac sleeps normally"
         case .paused(.lidClosed): "Paused — lid closed"
         case .paused(.lowPowerMode): "Paused — Low Power Mode"
+        case .keepingAwake where keepMode == .nightRun: "Night run · stays awake with the lid closed"
         case .keepingAwake(screenOn: true): "Mac awake · screen on"
         case .keepingAwake(screenOn: false): "Mac awake · screen can sleep"
         case .failed: "Couldn't hold the Mac awake"
@@ -148,6 +175,7 @@ final class PowerController {
         switch status {
         case .stopped: "battery.25"
         case .halted: "zzz"
+        case .keepingAwake where keepMode == .nightRun: "moon.stars.fill"
         case .keepingAwake(screenOn: true): "sun.max.fill"
         case .keepingAwake(screenOn: false): "cup.and.saucer.fill"
         case .paused: "moon.zzz"
@@ -157,9 +185,12 @@ final class PowerController {
 
     // MARK: Lifecycle
 
-    init(settings: any SettingsStoring) {
+    init(settings: any SettingsStoring, sleepSwitch: any SleepSwitching = SystemSleepSwitch()) {
         self.settings = settings
         keep = KeepAwakeSettings(settings: settings)
+        // Night run never survives a restart of Awake: it always comes back as off.
+        if keep.mode == .nightRun { keep.setMode(.off) }
+        nightRun = NightRun(system: sleepSwitch)
         let stored = settings.batteryCutoffPercent
         batteryCutoffPercent = AwakeMath.cutoffChoices.contains(stored) ? stored : AwakeMath.defaultCutoff
 
@@ -167,6 +198,7 @@ final class PowerController {
         startLidNotifications()
         startBatteryNotifications()
         startLowPowerNotifications()
+        startThermalNotifications()
         recompute()
     }
 
@@ -177,9 +209,15 @@ final class PowerController {
         recompute()
     }
 
-    /// Drops every assertion. Used when the app quits.
+    /// Drops every assertion and lets the Mac sleep again. Used when the app quits.
     func releaseAll() {
         releaseAssertions()
+        nightRun.apply(blockSleep: false)
+    }
+
+    /// Re-checks the Night run setup, for the menu.
+    func refreshNightRunSetup() {
+        nightRun.refreshSetup()
     }
 
     // MARK: Reading state
@@ -191,6 +229,7 @@ final class PowerController {
         onAC = battery.onAC
         batteryPercent = battery.percent
         lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        tooHot = AwakeMath.isTooHot(ProcessInfo.processInfo.thermalState)
         if batteryChanged { onBatteryChange?() }
     }
 
@@ -217,13 +256,38 @@ final class PowerController {
         recompute()
     }
 
+    fileprivate func thermalStateMayHaveChanged() {
+        let hot = AwakeMath.isTooHot(ProcessInfo.processInfo.thermalState)
+        guard hot != tooHot else { return }
+        tooHot = hot
+        recompute()
+    }
+
     // MARK: Deciding
 
     /// The single place that turns state into assertions. Idempotent, so it is
     /// safe to call after any change.
     private func recompute() {
+        // Night run ends on an agent's signal, the battery cutoff or heat, and goes back to off.
+        var ended: AwakeMath.NightRunEnd?
+        if keepMode == .nightRun {
+            ended = AwakeMath.nightRunEnd(cutOff: isCutOff, haltedByAgent: isHaltedByAgent, tooHot: tooHot)
+            if ended != nil { keep.setMode(.off) }
+        }
+
         let stopped = isCutOff || isHaltedByAgent
-        let shouldHold = !stopped && !lidClosed && !lowPowerMode
+        let nightRunning = keepMode == .nightRun && !stopped
+        let shouldHold = !stopped && (nightRunning || (!lidClosed && !lowPowerMode))
+
+        // The sleep-disabled setting first, so the Mac can sleep again before anything else.
+        if !nightRun.apply(blockSleep: nightRunning), nightRunning {
+            // It could not be turned on: fall back to off instead of looking like it runs.
+            keep.setMode(.off)
+            onModeChange?(keepMode)
+            recompute()
+            return
+        }
+
         let wanted = shouldHold ? keepMode.heldAssertions : KeepAwakeMode.Assertions(systemSleep: false, displaySleep: false)
 
         // Take or drop each assertion to match what the mode wants right now.
@@ -261,6 +325,24 @@ final class PowerController {
         if conditions != lastReported {
             lastReported = conditions
             onConditionsChange?(lidClosed, stopped)
+        }
+
+        if let ended {
+            onModeChange?(keepMode)
+            onNightRunEnd?(ended)
+            if lidClosed { sleepSoon() }
+        }
+    }
+
+    /// With the lid closed, a Mac whose sleep was disabled may not notice it can sleep
+    /// again until the lid moves, so it is told to. The short wait lets the smart plug
+    /// switch off first after an agent's halt.
+    private func sleepSoon() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            runOnMain {
+                guard let self, self.lidClosed, self.keepMode != .nightRun else { return }
+                self.nightRun.sleepNow()
+            }
         }
     }
 
@@ -303,6 +385,14 @@ final class PowerController {
             return
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    }
+
+    private func startThermalNotifications() {
+        NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            runOnMain { self?.thermalStateMayHaveChanged() }
+        }
     }
 
     private func startLowPowerNotifications() {
